@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>oncallbot — sign in</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222.6%22%3E%3Cpath%20stroke%3D%22%23c0243a%22%20d%3D%22M3%206.5h4.2l1.7-3.2%202%206.4%201.3-3.2H21%22%2F%3E%3Cpath%20stroke%3D%22%23d9722b%22%20d%3D%22M3%2013.5h11%22%2F%3E%3Cpath%20stroke%3D%22%23a8871f%22%20d%3D%22M3%2020h7%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+  <script>
+    // Before first paint, or the reader watches the page change colour under
+    // them. Only an explicit pick is stored -- no key means "follow the OS".
+    try {
+      var t = localStorage.getItem('oncallbot.theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) { }
+  </script>
+  <style>
+    /* --- theme ---
+       Same three-state scheme as the app itself, sharing its stored key, so a
+       choice made here survives the trip through sign-in. Dark applies when
+       the OS asks and the reader has not pinned light, and again when they
+       have pinned dark; the two dark blocks must stay in step. */
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f8;
+      --panel: #fff;
+      --ink: #16181d;
+      --muted: #6b7280;
+      --line: #e3e5e9;
+      --accent: #2f5fe0;
+      --accent-soft: #eaf0ff;
+      --on-accent: #fff;
+      --p0: #c0243a;
+      --p0bg: #fdeaed;
+      --p1: #d9722b;
+      --p1bg: #fdf0e6;
+      --p2: #a8871f;
+      --p3bg: #f1f2f4;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    @media (prefers-color-scheme:dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #14161a;
+        --panel: #1b1e24;
+        --ink: #e8eaee;
+        --muted: #9aa1ad;
+        --line: #2b2f37;
+        --accent: #7ea2ff;
+        --accent-soft: #1e2740;
+        --on-accent: #10131a;
+        --p0: #ff8494;
+        --p0bg: #331b20;
+        --p1: #ffb072;
+        --p1bg: #33261a;
+        --p2: #e2c65c;
+        --p3bg: #23262c;
+      }
+    }
+
+    :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #14161a;
+        --panel: #1b1e24;
+        --ink: #e8eaee;
+        --muted: #9aa1ad;
+        --line: #2b2f37;
+        --accent: #7ea2ff;
+        --accent-soft: #1e2740;
+        --on-accent: #10131a;
+        --p0: #ff8494;
+        --p0bg: #331b20;
+        --p1: #ffb072;
+        --p1bg: #33261a;
+        --p2: #e2c65c;
+        --p3bg: #23262c;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
+    }
+
+    .card {
+      width: 100%;
+      max-width: 430px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 26px 24px
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: -.01em
+    }
+
+    /* Same mark as the chat header, so the landing page and the app read as
+       one thing. See index.html for what it is made of. */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .mark {
+      display: block;
+      flex: none;
+      overflow: visible;
+    }
+
+    .sub {
+      margin: 5px 0 0;
+      font-size: 13px;
+      color: var(--muted)
+    }
+
+    .err {
+      margin: 16px 0 0;
+      padding: 10px 12px;
+      border-radius: 9px;
+      font-size: 13px;
+      background: var(--p0bg);
+      color: var(--p0);
+      border: 1px solid var(--p0)
+    }
+
+    .err.warn {
+      background: var(--p1bg);
+      color: var(--p1);
+      border-color: var(--p1)
+    }
+
+    .err code {
+      font-family: var(--mono);
+      font-size: 12px
+    }
+
+    label {
+      display: block;
+      margin: 18px 0 5px;
+      font-size: 12.5px;
+      font-weight: 650
+    }
+
+    .hint {
+      font-size: 11.5px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-top: 3px
+    }
+
+    input {
+      width: 100%;
+      font: inherit;
+      font-size: 14px;
+      padding: 9px 11px;
+      border-radius: 9px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--ink)
+    }
+
+    input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent)
+    }
+
+    input.bad {
+      border-color: var(--p0)
+    }
+
+    button {
+      margin-top: 20px;
+      width: 100%;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 650;
+      padding: 11px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: var(--on-accent);
+      cursor: pointer;
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      justify-content: center
+    }
+
+    button:hover {
+      filter: brightness(1.06)
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: default
+    }
+
+    .g {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 16px
+    }
+
+    .foot {
+      margin-top: 18px;
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.5
+    }
+
+    .foot code {
+      font-family: var(--mono)
+    }
+
+    .themebtn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.15;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .themebtn:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+  </style>
+</head>
+
+<body>
+  <button id="theme" class="themebtn" type="button"><span id="themeicon" aria-hidden="true">◐</span></button>
+  <div class="card">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2">
+          <path stroke="var(--p0, #c0243a)" d="M3 6.5h4.2l1.7-3.2 2 6.4 1.3-3.2H21"/>
+          <path stroke="var(--p1, #d9722b)" d="M3 13.5h11"/>
+          <path stroke="var(--p2, #a8871f)" d="M3 20h7"/>
+        </g>
+      </svg>
+      <h1>Triage</h1>
+    </div>
+    <p class="sub">Oncallbot for the health-record support.</p>
+
+    <div id="err" class="err" hidden></div>
+
+    <form id="f" method="get" action="/auth/login">
+      <label for="group">Group mailbox
+        <div class="hint">The inbox to triage. Read-only.</div>
+      </label>
+      <input id="group" name="group" type="email" autocomplete="off" placeholder="health-record-support@1mg.com"
+        required>
+
+      <button id="go" type="submit">
+        <svg class="g" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor"
+            d="M12 11v2.8h6.6c-.3 1.7-2 5-6.6 5a7 7 0 0 1 0-14c2 0 3.4.8 4.2 1.6l2.1-2A9.6 9.6 0 0 0 12 2a10 10 0 1 0 0 20c5.8 0 9.6-4 9.6-9.8 0-.7 0-1.2-.2-1.7H12z" />
+        </svg>
+        Sign in with Google
+      </button>
+    </form>
+
+    <p class="foot">
+      You consent once, as yourself, for read-only Gmail. Only the mail this tool
+      reads is the group inbox above.<br><br>
+      The admin API token for <b>Diagnose</b> is asked for inside the app when you
+      first use it — it is not needed to sign in.
+    </p>
+  </div>
+  <script>
+    const P = new URLSearchParams(location.search);
+    const DEFAULT_GROUP = 'health-record-support@1mg.com';
+    const MESSAGES = {
+      session_expired: ['Your session expired. Sign in again.', 'warn'],
+      gmail_revoked: ['Gmail access was revoked or expired. Sign in again.', 'warn'],
+      not_logged_in: ['Sign in to continue.', 'warn'],
+      not_allowed: ['{detail} is not allowed to use Triage. Use your @1mg.com account.', ''],
+      exchange_failed: ['Google would not complete the sign-in: {detail}', ''],
+      access_denied: ['You declined the Google consent, so there is no Gmail access to read with.', 'warn'],
+      no_code: ['Google sent us back without an authorization code. Try again.', ''],
+      logged_out: ['Signed out.', 'warn'],
+    };
+
+    // Everything here is URL text, so escape before it reaches the DOM.
+    function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+    (function showError() {
+      const err = P.get('err');
+      if (!err) return;
+      const [tpl, cls] = MESSAGES[err] || [`Sign-in failed (${esc(err)}).`, ''];
+      const el = document.getElementById('err');
+      el.className = 'err' + (cls ? ' ' + cls : '');
+      el.innerHTML = tpl.replace('{detail}', `<code>${esc(P.get('detail') || '')}</code>`);
+      el.hidden = false;
+      // redirect_uri_mismatch is a console setting, not something to retry.
+      if ((P.get('detail') || '').includes('redirect_uri_mismatch')) {
+        el.innerHTML += `<br><br>Add <code>${esc(location.origin)}/auth/callback</code> to the
+      OAuth client's authorized redirect URIs in Google Cloud Console.`;
+      }
+    })();
+
+    const group = document.getElementById('group');
+    group.value = P.get('group') || localStorage.getItem('oncallbot.group') || DEFAULT_GROUP;
+
+    document.getElementById('f').addEventListener('submit', (e) => {
+      const v = group.value.trim();
+      if (!v.includes('@')) { group.classList.add('bad'); e.preventDefault(); return; }
+      // Remembered here only: it is a mailbox name, not a credential.
+      try { localStorage.setItem('oncallbot.group', v); } catch { }
+      document.getElementById('go').disabled = true;
+    });
+    group.addEventListener('input', () => group.classList.remove('bad'));
+    group.focus();
+
+    /* --- theme ---
+       Three states, not two: "follow the OS" is a real preference and not the
+       same as choosing light, so cycling goes system -> light -> dark ->
+       system. The key is the app's, so the choice carries through sign-in. */
+    (function () {
+      const KEY = 'oncallbot.theme';
+      const ORDER = ['system', 'light', 'dark'];
+      const ICON = { system: '◐', light: '☀', dark: '☾' };
+      const btn = document.getElementById('theme');
+      const icon = document.getElementById('themeicon');
+      const mq = matchMedia('(prefers-color-scheme: dark)');
+
+      function read() {
+        try {
+          const v = localStorage.getItem(KEY);
+          return ORDER.includes(v) ? v : 'system';
+        } catch { return 'system'; }
+      }
+
+      function apply(mode) {
+        if (mode === 'system') delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = mode;
+        icon.textContent = ICON[mode];
+        const label = mode === 'system'
+          ? 'Theme: system (' + (mq.matches ? 'dark' : 'light') + ')'
+          : 'Theme: ' + mode;
+        const next = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length];
+        btn.title = label + ' \u2014 switch to ' + next;
+        btn.setAttribute('aria-label', btn.title);
+      }
+
+      btn.addEventListener('click', () => {
+        const next = ORDER[(ORDER.indexOf(read()) + 1) % ORDER.length];
+        try {
+          if (next === 'system') localStorage.removeItem(KEY);
+          else localStorage.setItem(KEY, next);
+        } catch { }
+        apply(next);
+      });
+
+      // In system mode the CSS already follows along; this only keeps the
+      // button's label honest about which way the OS resolved.
+      mq.addEventListener('change', () => { if (read() === 'system') apply('system'); });
+
+      apply(read());
+    })();
+  </script>
+</body>
+
+</html>

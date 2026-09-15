@@ -1,0 +1,148 @@
+# Copy to config.yaml and run. Nothing here has to be edited to get started;
+# config.yaml is gitignored so your copy stays yours.
+
+gmail:
+  # Optional. With browser login on (see `auth` below) the account that signs
+  # in IS the account, so this is only a hint on the consent screen -- and the
+  # account the CLI commands (fetch / summarize / diagnose) use, which are
+  # authorized separately by `oncallbot auth`.
+  #
+  # Set it to your own @1mg.com address if you use the CLI. When it is set, the
+  # account that consented is checked against it on every CLI run, so
+  # consenting with the wrong Google account fails loudly instead of silently
+  # returning zero threads.
+  account: ""
+
+  # The address whose presence marks a thread as ours.
+  support_address: health-record-support@1mg.com
+
+  # Matchers are OR'd together, then AND'ed with the time window and extra_query.
+  match:
+    # to: / cc: / bcc: / deliveredto: -- the address is an actual recipient.
+    recipients: true
+    # Bare term search: also matches the address in the body, signatures and
+    # quoted replies. Catches forwards where the address was dropped from the
+    # header. Noisier.
+    anywhere: true
+    # Gmail labels that mark a thread as ours, e.g. ["health-record-support"].
+    labels: []
+
+  # Appended verbatim to the generated Gmail query. Use for noise cuts.
+  extra_query: "-from:noreply@1mg.com -subject:(automated OR digest)"
+
+  lookback_days: 7
+  max_threads: 50
+  include_spam_trash: false
+
+  credentials_file: .secrets/oauth_client.json
+  token_file: .secrets/token.json
+
+redaction:
+  # Strip obvious PII from bodies before they leave the machine. Identifiers
+  # needed for triage (order ids, patient ids, record ids, emails) are kept.
+  enabled: true
+
+attachments:
+  # Download image / PDF / text attachments so the model can actually look at
+  # the screenshot or lab report, instead of only seeing a filename.
+  #
+  # Attachment content CANNOT be redacted -- a lab report PDF is raw PHI. These
+  # limits are the only control, and `enabled: false` turns the whole thing off.
+  # Read docs/phi.md before leaving this on against the real inbox.
+  enabled: true
+  max_per_thread: 5
+  max_bytes_each: 5242880      # 5 MB
+  max_total_bytes: 15728640    # 15 MB
+
+local:
+  # Used only when summarizer.backend is `local`. Any OpenAI-compatible server
+  # works: Ollama (default below), LM Studio (:1234), llama.cpp --api, vLLM.
+  #   ollama serve && ollama pull llama3.1:8b
+  base_url: http://localhost:11434
+  model: llama3.1:8b
+  # Most local servers need no key. Name an env var here if yours does.
+  api_key_env: ""
+  temperature: 0.0
+  max_tokens: 4096
+  # Smaller than the cloud budget: local context windows are tighter.
+  max_body_chars: 8000
+  timeout_seconds: 300
+
+hra:
+  # The unified-admin dashboard proxy, used by phase-2 diagnosis. Paths mirror
+  # what the dashboard itself calls, so the /hr_admin_service rewrite stays
+  # irrelevant. Reads only.
+  #
+  # The token is your own dashboard session: open the dashboard, copy
+  # `accessToken` from localStorage (DevTools > Application > Local Storage)
+  # and put it in .env. It carries your full admin authority, not a narrow
+  # read-only scope -- do not share it, and expect it to expire.
+  base_url: https://unifiedadmin.1mg.com/hra
+  token_env: ONCALLBOT_HRA_TOKEN
+  access_key: 1mg_client_access_key
+  timeout_seconds: 30
+
+summarizer:
+  # claude_cli    -> shells out to the `claude` binary, reusing your Claude Code
+  #                  login. No API key needed. Requires Claude Code installed.
+  # anthropic_api -> calls the Anthropic API directly. Needs an API key in the
+  #                  environment variable named by api_key_env (below).
+  # local         -> a model you host yourself (see the `local` block). Nothing
+  #                  leaves the machine; weaker at severity and identifiers,
+  #                  and cannot read attachments. Measure before trusting it.
+  backend: claude_cli
+
+  # Aliases (opus / sonnet / haiku) or a full id such as claude-opus-5.
+  # opus is the most capable; sonnet is roughly 40% of the cost per token and
+  # is usually enough for triage. Switch if your volume makes it worth it.
+  model: opus
+
+  # Only read when backend is anthropic_api. The key itself is NEVER stored in
+  # this file -- put it in .env or export it in your shell.
+  api_key_env: ANTHROPIC_API_KEY
+
+  # low | medium | high | xhigh | max -- how hard the model works per thread.
+  effort: medium
+
+  timeout_seconds: 180
+  # Per-thread body budget handed to the model.
+  max_body_chars: 12000
+
+# Tune these to how the team actually buckets tickets.
+categories:
+  - record_not_visible
+  - record_missing_after_upload
+  - upload_failure
+  - wrong_patient_mapping
+  - duplicate_record
+  - lab_report_not_synced
+  - prescription_not_visible
+  - sharing_or_consent
+  - deletion_request
+  - data_correction
+  - access_permission
+  - app_error_or_crash
+  - other
+
+# Browser login. Each person signs in with Google and the app reads Gmail as
+# them -- their own token, their own summary cache. Set enabled: false to run
+# the pre-login single-user way, using the token from `oncallbot auth`.
+auth:
+  enabled: true
+  # The only membership check available without Directory API scopes. A
+  # colleague on this domain who is NOT on the support group signs in fine and
+  # sees zero threads: Google cannot tell us they are not a member.
+  allowed_domain: 1mg.com
+  # Tighter than the domain, if you want it. Empty means anyone on the domain.
+  allowed_emails: []
+  # Must match a redirect URI the OAuth client accepts. Loopback works
+  # unregistered for a Desktop client; a hosted deployment needs a Web client
+  # with this URI added in Google Cloud Console.
+  redirect_path: /auth/callback
+  idle_hours: 12
+  max_hours: 168
+  tokens_dir: .secrets/tokens
+  stores_dir: .data/users
+
+store:
+  path: .data/oncallbot.sqlite3
