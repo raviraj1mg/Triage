@@ -1,0 +1,13 @@
+.secrets/
+.data/
+out/
+__pycache__/
+*.pyc
+.venv/
+.env
+!.env.example
+config.yaml
+.pytest_cache/
+
+# Handover zips: built artifacts, and one would embed the previous one.
+oncallbot-handover-*.zip

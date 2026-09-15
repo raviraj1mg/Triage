@@ -1,0 +1,4227 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>oncallbot</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222.6%22%3E%3Cpath%20stroke%3D%22%23c0243a%22%20d%3D%22M3%206.5h4.2l1.7-3.2%202%206.4%201.3-3.2H21%22%2F%3E%3Cpath%20stroke%3D%22%23d9722b%22%20d%3D%22M3%2013.5h11%22%2F%3E%3Cpath%20stroke%3D%22%23a8871f%22%20d%3D%22M3%2020h7%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+  <script>
+    // Before first paint, or the reader watches the page change colour under them.
+    // Only an explicit pick is stored -- no key means "follow the OS".
+    try {
+      var t = localStorage.getItem('oncallbot.theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) { }
+  </script>
+  <style>
+    /* --- theme ---
+   Light is the base palette. Dark applies when the OS asks for it *and* the
+   reader has not pinned light, and again when they have pinned dark -- so the
+   header toggle wins in both directions instead of only being able to darken
+   an already-light OS. The two dark blocks must stay in step: CSS has no way
+   to share one declaration list between a media query and an attribute
+   selector, so this duplication is the price of an override that works. */
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f8;
+      --panel: #fff;
+      --ground: #fff;
+      --sunk: #f1f2f4;
+      --ink: #16181d;
+      --muted: #6b7280;
+      --line: #e3e5e9;
+      --accent: #2f5fe0;
+      --accent-soft: #eaf0ff;
+      --on-accent: #fff;
+      --ok: #1a7a4c;
+      --ok-soft: #e4f3ea;
+      --p0: #c0243a;
+      --p1: #d9722b;
+      --p2: #a8871f;
+      --p3: #6b7280;
+      --p0bg: #fdeaed;
+      --p1bg: #fdf0e6;
+      --p2bg: #fbf6e3;
+      --p3bg: #f1f2f4;
+      --scrim: rgba(8, 9, 12, .62);
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    @media (prefers-color-scheme:dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #14161a;
+        --panel: #1b1e24;
+        --ground: #14161a;
+        --sunk: #22262d;
+        --ink: #e8eaee;
+        --muted: #9aa1ad;
+        --line: #2b2f37;
+        --accent: #7ea2ff;
+        --accent-soft: #1e2740;
+        --on-accent: #10131a;
+        --ok: #5fcf95;
+        --ok-soft: #16301f;
+        --p0: #ff8494;
+        --p1: #ffb072;
+        --p2: #e2c65c;
+        --p3: #9aa1ad;
+        --p0bg: #331b20;
+        --p1bg: #33261a;
+        --p2bg: #302b18;
+        --p3bg: #23262c;
+        --scrim: rgba(0, 0, 0, .66);
+      }
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #14161a;
+      --panel: #1b1e24;
+      --ground: #14161a;
+      --sunk: #22262d;
+      --ink: #e8eaee;
+      --muted: #9aa1ad;
+      --line: #2b2f37;
+      --accent: #7ea2ff;
+      --accent-soft: #1e2740;
+      --on-accent: #10131a;
+      --ok: #5fcf95;
+      --ok-soft: #16301f;
+      --p0: #ff8494;
+      --p1: #ffb072;
+      --p2: #e2c65c;
+      --p3: #9aa1ad;
+      --p0bg: #331b20;
+      --p1bg: #33261a;
+      --p2bg: #302b18;
+      --p3bg: #23262c;
+      --scrim: rgba(0, 0, 0, .66);
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      margin: 0;
+      font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      height: 100vh;
+      display: flex;
+      flex-direction: column
+    }
+
+    header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      flex-wrap: wrap
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: -.01em
+    }
+
+    header .addr {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    header .stats {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap
+    }
+
+    .pill {
+      background: var(--p3bg);
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-weight: 600
+    }
+
+    .reset {
+      font: inherit;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .reset:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .reset:disabled {
+      opacity: .4;
+      cursor: default
+    }
+
+    .themebtn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px
+    }
+
+    .themebtn .ti {
+      font-size: 13px;
+      line-height: 1.15;
+      width: 1em;
+      text-align: center
+    }
+
+    .pill.p0 {
+      background: var(--p0bg);
+      color: var(--p0)
+    }
+
+    .pill.p1 {
+      background: var(--p1bg);
+      color: var(--p1)
+    }
+
+    .pill.p2 {
+      background: var(--p2bg);
+      color: var(--p2)
+    }
+
+    .pill.p3 {
+      background: var(--p3bg);
+      color: var(--p3)
+    }
+
+    #log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 22px 20px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px
+    }
+
+    .turn {
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto
+    }
+
+    .msg {
+      padding: 11px 14px;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere
+    }
+
+    /* A bubble holding rendered markdown rather than raw prose.
+       pre-wrap plus block markup is what made the token box twice as tall as
+       its content; formatBlocks emits no newlines of its own, so this opts
+       out and lets the <p> and <ul> do the spacing. */
+    /* The panel headers exist because readers could not tell where a summary
+       ended and a diagnosis began -- both are plain panels under a card. */
+    /* Closed by default: it explains an answer rather than being one. */
+    .thinking {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      padding: 6px 10px;
+      font-size: 12px
+    }
+
+    .thinking>summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted)
+    }
+
+    .thinking>summary::-webkit-details-marker {
+      display: none
+    }
+
+    .thinking>summary::before {
+      content: "▸";
+      font-size: 10px
+    }
+
+    .thinking[open]>summary::before {
+      content: "▾"
+    }
+
+    .tsum {
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      font-size: 10.5px
+    }
+
+    .tcount {
+      font-size: 11px;
+      opacity: .8
+    }
+
+    .tbody {
+      margin-top: 7px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px
+    }
+
+    .trow {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 7px;
+      padding: 3px 0;
+      border-top: 1px solid var(--line)
+    }
+
+    .tkind {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--p3bg);
+      color: var(--muted);
+      flex: none
+    }
+
+    .tkind.tprompt {
+      background: var(--accent-soft);
+      color: var(--accent)
+    }
+
+    .tkind.ttool {
+      background: var(--ok-soft);
+      color: var(--ok)
+    }
+
+    .tlabel {
+      color: var(--ink)
+    }
+
+    .tedited {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--on-accent)
+    }
+
+    .tmeta {
+      color: var(--muted);
+      font-size: 11px
+    }
+
+    .tparams {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-all
+    }
+
+    .tdetail {
+      flex-basis: 100%
+    }
+
+    .tdetail>summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 11px
+    }
+
+    .tdetail pre {
+      white-space: pre-wrap;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.45;
+      margin: 6px 0 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--bg);
+      max-height: 260px;
+      overflow: auto
+    }
+
+    .panelhead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--line)
+    }
+
+    .panelname {
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+      color: var(--muted)
+    }
+
+    /* Quiet until wanted: this is a tool for when an answer is wrong, not
+       something to read past on every card. */
+    .promptcta {
+      font: inherit;
+      font-size: 11.5px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .promptcta:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .msg .promptcta {
+      margin-top: 9px
+    }
+
+    .promptbox {
+      margin-bottom: 16px
+    }
+
+    .promptlabel {
+      font-size: 12.5px;
+      font-weight: 600;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .promptlabel .edited {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--on-accent);
+      background: var(--accent);
+      padding: 1px 6px;
+      border-radius: 999px
+    }
+
+    .prompttext {
+      width: 100%;
+      min-height: 190px;
+      resize: vertical;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 9px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--ink)
+    }
+
+    .promptrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 6px
+    }
+
+    .promptrow .hint {
+      white-space: normal;
+      overflow: visible;
+      padding-top: 0
+    }
+
+    .linkbtn {
+      font: inherit;
+      font-size: 12px;
+      border: 0;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      text-decoration: underline
+    }
+
+    .msg.rich {
+      white-space: normal
+    }
+
+    .msg.rich p {
+      margin: 6px 0
+    }
+
+    /* No padding of its own at the ends -- the bubble already has some. */
+    .msg.rich p:first-of-type {
+      margin-top: 0
+    }
+
+    .msg.rich p:last-of-type {
+      margin-bottom: 0
+    }
+
+    .msg code {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      background: var(--p3bg);
+      padding: 1px 5px;
+      border-radius: 4px
+    }
+
+    .msg pre.block {
+      margin: 6px 0;
+      padding: 9px 11px;
+      border-radius: 8px;
+      background: var(--p3bg);
+      overflow-x: auto;
+      white-space: pre
+    }
+
+    .msg pre.block code {
+      background: none;
+      padding: 0;
+      font-size: 12.5px
+    }
+
+    .msg strong {
+      font-weight: 650
+    }
+
+    .src {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-bottom: 7px
+    }
+
+    .src.gmail {
+      background: var(--accent-soft);
+      color: var(--accent)
+    }
+
+    .src.cache {
+      background: var(--p2bg);
+      color: var(--p2)
+    }
+
+    .src.api {
+      background: var(--ok-soft, var(--p3bg));
+      color: var(--ok, var(--accent))
+    }
+
+    .src.ctx {
+      background: var(--p3bg);
+      color: var(--muted)
+    }
+
+    .me {
+      background: var(--accent-soft);
+      border: 1px solid var(--line);
+      margin-left: auto;
+      max-width: 78%;
+      width: fit-content
+    }
+
+    .bot {
+      background: var(--panel);
+      border: 1px solid var(--line)
+    }
+
+    .status {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      padding: 2px 0 2px 14px;
+      border-left: 2px solid var(--line);
+      margin: 4px 0 4px 2px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere
+    }
+
+    .err {
+      background: var(--p0bg);
+      color: var(--p0);
+      border: 1px solid var(--p0)
+    }
+
+    .streaming::after {
+      content: '▍';
+      color: var(--accent);
+      animation: blink 1s steps(2) infinite
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0
+      }
+    }
+
+    .cards {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      /* Content that cannot wrap is clipped to the card rather than drawn
+         over whatever is beside it. */
+      overflow: hidden;
+      min-width: 0
+    }
+
+    .card h3 {
+      margin: 0 0 6px;
+      font-size: 14.5px;
+      font-weight: 650;
+      display: flex;
+      gap: 9px;
+      align-items: baseline;
+      flex-wrap: wrap
+    }
+
+    .card h3 .sub {
+      font-weight: 500
+    }
+
+    .cat {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted)
+    }
+
+    .cstate {
+      margin-top: 7px
+    }
+
+    .card .issue {
+      margin: 6px 0
+    }
+
+    .card .meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap
+    }
+
+    .card .meta a {
+      color: var(--accent)
+    }
+
+    /* A flex row that wraps, rather than inline chips with no break
+       opportunity between them: `join('')` made the whole run one unbreakable
+       inline box, so a row of plain numeric ids -- no hyphen to break at --
+       ran straight out of the card. Hyphenated PB ids wrapped, which is why
+       it looked like only some data escaped. */
+    .ids {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+      min-width: 0
+    }
+
+    .ids code {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      background: var(--p3bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      max-width: 100%;
+      overflow-wrap: anywhere
+    }
+
+    /* --- date group heading --- */
+    .daygroup {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0 2px
+    }
+
+    .daygroup:first-child {
+      margin-top: 2px
+    }
+
+    .daygroup .d {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      color: var(--muted)
+    }
+
+    .daygroup .rel {
+      font-size: 11.5px;
+      color: var(--muted);
+      opacity: .75
+    }
+
+    .daygroup .rule {
+      flex: 1;
+      height: 1px;
+      background: var(--line)
+    }
+
+    .acc {
+      margin-top: 12px
+    }
+
+    .acc:first-child {
+      margin-top: 2px
+    }
+
+    .acchead {
+      width: 100%;
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+      flex-wrap: wrap;
+      text-align: left;
+      font: inherit;
+      color: var(--ink);
+      background: none;
+      border: 0;
+      border-radius: 8px;
+      padding: 6px 8px;
+      cursor: pointer
+    }
+
+    .acchead:hover {
+      background: var(--p3bg)
+    }
+
+    .acchead:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px
+    }
+
+    .acchead .chev {
+      display: inline-block;
+      width: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      transition: transform .12s ease
+    }
+
+    .acc.open .acchead .chev {
+      transform: rotate(90deg)
+    }
+
+    .acchead .lbl {
+      font-size: 13px;
+      font-weight: 700
+    }
+
+    .acchead .n {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 1px 7px
+    }
+
+    .acchead .desc {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--muted);
+      flex: 1;
+      min-width: 140px
+    }
+
+    .acc>.cards {
+      margin-top: 6px
+    }
+
+    .acc:not(.open)>.cards {
+      display: none
+    }
+
+    /* --- thread card (no LLM) --- */
+    .tcard {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      overflow: hidden;
+      min-width: 0
+    }
+
+    .tcard .top {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start
+    }
+
+    .tcard h3 {
+      margin: 0;
+      font-size: 14.5px;
+      font-weight: 650;
+      flex: 1;
+      overflow-wrap: anywhere
+    }
+
+    .tcard .time {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+      white-space: nowrap;
+      padding-top: 2px
+    }
+
+    .tcard .who {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 5px
+    }
+
+    .tcard .who b {
+      font-weight: 600;
+      color: var(--ink)
+    }
+
+    .tcard .snip {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+      max-height: 4.7em;
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      position: relative
+    }
+
+    .tcard .snip.clamped::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 1.5em;
+      background: linear-gradient(to bottom, transparent, var(--panel))
+    }
+
+    .tcard .foot {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+      margin-top: 11px
+    }
+
+    .tcard .foot a {
+      font-size: 12px;
+      color: var(--accent)
+    }
+
+    .chipm {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--p3bg);
+      border-radius: 999px;
+      padding: 2px 8px;
+      display: inline-flex;
+      gap: 5px;
+      align-items: center
+    }
+
+    .att {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--p3bg);
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin: 2px 4px 0 0;
+      display: inline-block
+    }
+
+    .att[data-copy] {
+      cursor: copy
+    }
+
+    .att[data-copy]:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+
+    .sumbtn {
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      padding: 5px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      margin-left: auto
+    }
+
+    .sumbtn:hover:not(:disabled) {
+      background: var(--accent-soft)
+    }
+
+    .sumbtn:disabled {
+      opacity: .55;
+      cursor: default
+    }
+
+    .sumbtn.cached {
+      border-color: var(--line);
+      color: var(--muted)
+    }
+
+    /* --- summary panel revealed inside a card --- */
+    .sumwrap {
+      margin-top: 12px;
+      padding-top: 11px;
+      border-top: 1px dashed var(--line);
+      min-width: 0;
+      overflow-wrap: anywhere
+    }
+
+    .sumwrap .hdr {
+      display: flex;
+      gap: 9px;
+      align-items: baseline;
+      flex-wrap: wrap;
+      margin-bottom: 6px
+    }
+
+    .pill.pending {
+      background: var(--p3bg);
+      color: var(--muted)
+    }
+
+    .sumwrap .issue {
+      margin: 6px 0
+    }
+
+    .sumerr {
+      font-size: 12.5px;
+      color: var(--p0)
+    }
+
+    /* --- skeleton --- */
+    .sk {
+      background: linear-gradient(90deg, var(--p3bg) 25%, var(--line) 37%, var(--p3bg) 63%);
+      background-size: 400% 100%;
+      animation: sh 1.3s ease-in-out infinite;
+      border-radius: 6px;
+      height: 11px;
+      margin: 7px 0
+    }
+
+    @keyframes sh {
+      0% {
+        background-position: 100% 50%
+      }
+
+      100% {
+        background-position: 0 50%
+      }
+    }
+
+    .sk.w20 {
+      width: 20%
+    }
+
+    .sk.w35 {
+      width: 35%
+    }
+
+    .sk.w60 {
+      width: 60%
+    }
+
+    .sk.w80 {
+      width: 80%
+    }
+
+    .sk.w95 {
+      width: 95%
+    }
+
+    .sklabel {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-bottom: 4px
+    }
+
+    /* --- text arriving from the model --- */
+    .live {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 13px
+    }
+
+    .live.tail::after,
+    .tail:empty::after {
+      content: '\258d';
+      color: var(--accent);
+      animation: blink 1s steps(2) infinite
+    }
+
+    .tail li:last-child::after,
+    .tail p:last-child::after {
+      content: ' \258d';
+      color: var(--accent);
+      animation: blink 1s steps(2) infinite
+    }
+
+    .live:empty {
+      display: none
+    }
+
+    .livemeta {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 6px
+    }
+
+    .pts {
+      margin: 6px 0 0;
+      padding-left: 19px
+    }
+
+    .pts li {
+      margin: 4px 0
+    }
+
+    .pts li.sub {
+      list-style: circle;
+      margin-left: 14px
+    }
+
+    .pts+.pts {
+      margin-top: 2px
+    }
+
+    .sumtext {
+      font-size: 13.5px
+    }
+
+    .sumtext:empty,
+    .livemeta:empty {
+      display: none
+    }
+
+    .dxsec p,
+    .sumwrap p {
+      margin: 6px 0
+    }
+
+    .dxwait {
+      margin-top: 9px;
+      font-style: italic
+    }
+
+    /* .msg is pre-wrap so streamed prose keeps its newlines. This box is
+       built from an indented template, and under pre-wrap every one of those
+       newlines rendered as blank space -- 445px of box for 185px of content.
+       It is markup, not prose, so it opts out. */
+    .tokenask {
+      white-space: normal
+    }
+
+    .tokenask .tokhead {
+      font-size: 14px;
+      margin-bottom: 6px
+    }
+
+    /* The bare .hint is the one-line footer under the composer: nowrap, with
+       an ellipsis. This one is a paragraph, and inheriting that truncated it
+       mid-sentence -- 890px of message in a 790px box. */
+    .tokenask .hint {
+      font-size: 12.5px;
+      color: var(--muted);
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip
+    }
+
+    /* formatBlocks emits <p>, whose default margins are what made this box
+       twice as tall as it needed to be. */
+    .tokenask .hint p {
+      margin: 2px 0
+    }
+
+    .tokenask .hint p:first-child {
+      margin-top: 0
+    }
+
+    .tokenask a {
+      color: var(--accent);
+      text-decoration: underline
+    }
+
+    .tokenask .tokrow {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px
+    }
+
+    .tokenask .tokfoot {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 9px
+    }
+
+    .videocta {
+      font: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 5px 11px;
+      border-radius: 8px;
+      border: 1px solid var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+      cursor: pointer;
+      display: inline-flex;
+      gap: 7px;
+      align-items: center
+    }
+
+    .videocta:hover {
+      background: var(--accent);
+      color: #fff
+    }
+
+    .tokenask input {
+      flex: 1;
+      font: inherit;
+      font-size: 13px;
+      font-family: var(--mono);
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--ink)
+    }
+
+    .tokenask input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px
+    }
+
+    .helpvid video {
+      width: 100%;
+      max-height: 70vh;
+      border-radius: 10px;
+      background: #000;
+      display: block
+    }
+
+    .helpvid .hint {
+      margin-top: 10px;
+      font-size: 12.5px;
+      color: var(--muted)
+    }
+
+    /* The greeting types itself out, so the first thing on screen behaves
+       like the thing it is -- a bot that is about to answer. A caret while it
+       runs, and nothing left behind once it stops. */
+    .msg.typing::after {
+      content: "";
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      margin-left: 2px;
+      vertical-align: -0.15em;
+      background: var(--accent);
+      animation: caret 1s step-end infinite
+    }
+
+    @keyframes caret {
+      0%, 100% { opacity: 1 }
+      50% { opacity: 0 }
+    }
+
+    /* Someone who has asked the OS for less motion gets the text at once. */
+    @media (prefers-reduced-motion: reduce) {
+      .msg.typing::after { animation: none }
+    }
+
+    .enginewrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      min-width: 0
+    }
+
+    /* Which kind of model is answering, visible without reading the label:
+       amber for one running on this machine, accent for a hosted one. */
+    .enginedot {
+      position: absolute;
+      left: 11px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      pointer-events: none
+    }
+
+    .enginedot.local {
+      background: var(--p1);
+      box-shadow: 0 0 0 3px var(--p1bg)
+    }
+
+    .enginedot.cloud {
+      background: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft)
+    }
+
+    /* The native arrow sits in the 999px corner curve with barely any room
+       beside it, which reads as clipped. Drawn ourselves instead, so it can be
+       placed against the straight part of the pill. */
+    #engine {
+      font: inherit;
+      font-size: 12px;
+      max-width: 210px;
+      padding: 0 28px 0 25px;
+      transition: width .12s;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      text-overflow: ellipsis;
+      appearance: none;
+      -webkit-appearance: none
+    }
+
+    .enginewrap::after {
+      content: "";
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      border-right: 1.5px solid var(--muted);
+      border-bottom: 1.5px solid var(--muted);
+      transform: translateY(-70%) rotate(45deg);
+      pointer-events: none;
+      transition: border-color .15s
+    }
+
+    #engine:hover,
+    .enginewrap:hover #engine {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .enginewrap:hover::after {
+      border-color: var(--accent)
+    }
+
+    .mic {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      padding: 0;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .mic:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .mic.live {
+      border-color: var(--p0);
+      background: var(--p0bg);
+      color: var(--p0);
+      animation: micpulse 1.4s ease-in-out infinite
+    }
+
+    @keyframes micpulse {
+      50% {
+        opacity: .55
+      }
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap
+    }
+
+    #send.stop {
+      background: var(--p0bg);
+      border: 1px solid var(--p0);
+      color: var(--p0)
+    }
+
+    .sumbtn.stopping,
+    .dxbtn.stopping {
+      border-color: var(--p0);
+      color: var(--p0)
+    }
+
+    .msg.stopped {
+      opacity: .85
+    }
+
+    .stopnote {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      font-style: italic
+    }
+
+    .fcalls {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      margin: 7px 0 3px
+    }
+
+    .fcall {
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    .fcall .fp {
+      font-family: var(--mono);
+      font-size: 11px;
+      opacity: .8
+    }
+
+    .fcall.none {
+      font-style: italic
+    }
+
+    /* --- diagnose --- */
+    .dxbtn {
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      padding: 5px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--ok, #1a7a4c);
+      background: transparent;
+      color: var(--ok, #1a7a4c);
+      cursor: pointer
+    }
+
+    .dxbtn:hover:not(:disabled) {
+      background: var(--ok-soft, rgba(26, 122, 76, .12))
+    }
+
+    .dxbtn:disabled {
+      opacity: .55;
+      cursor: default
+    }
+
+    .dxwrap {
+      margin-top: 12px;
+      padding-top: 11px;
+      border-top: 1px dashed var(--line);
+      min-width: 0;
+      overflow-wrap: anywhere
+    }
+
+    .vd {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      padding: 2px 9px;
+      margin-right: 7px
+    }
+
+    .vd.mismatch {
+      background: var(--p0bg);
+      color: var(--p0)
+    }
+
+    .vd.match {
+      background: var(--ok-soft, var(--p3bg));
+      color: var(--ok, var(--muted))
+    }
+
+    .vd.indeterminate {
+      background: var(--p2bg);
+      color: var(--p2)
+    }
+
+    .vd.closed {
+      background: var(--p3bg);
+      color: var(--muted)
+    }
+
+    .vd.open {
+      background: var(--p1bg);
+      color: var(--p1)
+    }
+
+    .cmp {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      margin-top: 9px
+    }
+
+    .cmp th {
+      text-align: left;
+      font-size: 10.5px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 3px 8px 3px 0
+    }
+
+    .cmp td {
+      padding: 3px 8px 3px 0;
+      border-top: 1px solid var(--line);
+      overflow-wrap: anywhere
+    }
+
+    .cmp td.v {
+      font-family: var(--mono);
+      font-size: 11.5px
+    }
+
+    .cmp .no {
+      color: var(--p0);
+      font-weight: 650
+    }
+
+    .cmp .yes {
+      color: var(--ok, var(--muted))
+    }
+
+    .tl {
+      font-size: 12.5px;
+      margin-top: 9px
+    }
+
+    .tl .h {
+      font-weight: 650;
+      font-size: 11px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--muted)
+    }
+
+    .tl li {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted)
+    }
+
+    .steps {
+      margin: 9px 0 0 0;
+      padding-left: 1.2rem;
+      font-size: 13px
+    }
+
+    .steps li {
+      margin: 3px 0
+    }
+
+    .dxtrail {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      opacity: .8;
+      margin-top: 8px
+    }
+
+    .checks {
+      list-style: none;
+      margin: 10px 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px
+    }
+
+    .checks li {
+      display: grid;
+      grid-template-columns: 1.15rem 1fr;
+      gap: 0 .6rem;
+      align-items: start;
+      font-size: 13px
+    }
+
+    .checks .mk {
+      font-weight: 700;
+      line-height: 1.5
+    }
+
+    .checks .mk.ok {
+      color: var(--ok, #1a7a4c)
+    }
+
+    .checks .mk.no {
+      color: var(--p0)
+    }
+
+    .checks .lbl {
+      font-weight: 600
+    }
+
+    .checks .why {
+      grid-column: 2;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+      overflow-wrap: anywhere
+    }
+
+    .dxnote {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 8px
+    }
+
+    .dxsec {
+      margin-top: 11px
+    }
+
+    .dxsec .h {
+      font-weight: 650;
+      font-size: 11px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px
+    }
+
+    /* Identifiers read as code wherever they appear. */
+    .dxwrap code,
+    .sumwrap code,
+    .tcard code {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      background: var(--sunk, var(--p3bg));
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: .05em .32em
+    }
+
+    .idpill {
+      font-family: var(--mono)
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap
+    }
+
+    /* --- click-to-copy ---
+   No buttons and no glyphs: the thing itself is the control. What remains as
+   affordance is the copy cursor, a hover tint and a title, plus a tick and a
+   toast on success -- discoverable without adding a widget beside every id.
+   The tick is CSS generated content, so it never lands in the copied text. */
+    code {
+      cursor: copy;
+      transition: background .12s, border-color .12s, color .12s
+    }
+
+    code:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    code.copied {
+      border-color: var(--ok, var(--accent));
+      color: var(--ok, var(--accent))
+    }
+
+    code.copied::after {
+      content: ' \2713';
+      opacity: 1
+    }
+
+    /* Longer text that is copyable too: subjects, senders, filenames. */
+    [data-copy] {
+      cursor: copy
+    }
+
+    .urlink {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      cursor: pointer;
+      white-space: nowrap
+    }
+
+    .urlink .ext {
+      font-size: .85em;
+      margin-left: 2px;
+      opacity: .7
+    }
+
+    .urlink:hover {
+      text-decoration-thickness: 2px
+    }
+
+    .copytext:hover {
+      text-decoration: underline dotted;
+      text-underline-offset: 3px
+    }
+
+    [data-copy]:hover {
+      color: var(--accent)
+    }
+
+    [data-copy].copied::after {
+      content: ' \2713';
+      color: var(--ok, var(--accent))
+    }
+
+    #chatpanel {
+      position: fixed;
+      top: 58px;
+      right: 20px;
+      z-index: 40;
+      width: 320px;
+      max-height: 60vh;
+      overflow-y: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .18)
+    }
+
+    .chatpanel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px
+    }
+
+    .chatitem {
+      display: block;
+      width: 100%;
+      text-align: left;
+      font: inherit;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      padding: 7px 9px;
+      cursor: pointer;
+      color: var(--ink)
+    }
+
+    .chatitem:hover {
+      background: var(--p3bg)
+    }
+
+    .chatitem.active {
+      border-color: var(--accent);
+      background: var(--accent-soft)
+    }
+
+    .chatitem .t {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .chatitem .n {
+      display: block;
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    #chatpanel .hint {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 9px
+    }
+
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%) translateY(8px);
+      background: var(--ink);
+      color: var(--ground);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 999px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .16s, transform .16s;
+      z-index: 60;
+      max-width: 80vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0)
+    }
+
+    /* --- read-thread button --- */
+    .readbtn {
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      padding: 5px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .readbtn:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .foot .sumbtn {
+      margin-left: 0
+    }
+
+    .foot .spacer {
+      flex: 1
+    }
+
+    /* --- modal --- */
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: var(--scrim);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 50
+    }
+
+    .backdrop[hidden] {
+      display: none
+    }
+
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      width: min(860px, 100%);
+      max-height: min(86vh, 100%);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .35)
+    }
+
+    .modal .mhead {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--line)
+    }
+
+    .modal .mhead h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+      flex: 1;
+      overflow-wrap: anywhere
+    }
+
+    .modal .mhead .sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-weight: 400
+    }
+
+    .modal .mhead a {
+      font-size: 12px;
+      color: var(--accent);
+      white-space: nowrap
+    }
+
+    .xbtn {
+      font: inherit;
+      font-size: 18px;
+      line-height: 1;
+      padding: 2px 9px 5px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .xbtn:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .mbody {
+      overflow-y: auto;
+      padding: 6px 18px 18px
+    }
+
+    .emsg {
+      border-bottom: 1px solid var(--line);
+      padding: 14px 0
+    }
+
+    .emsg:last-child {
+      border-bottom: 0
+    }
+
+    .emsg .eh {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      flex-wrap: wrap
+    }
+
+    .emsg .who {
+      font-size: 13px;
+      font-weight: 650
+    }
+
+    .emsg .when {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-left: auto;
+      white-space: nowrap
+    }
+
+    .emsg .addr {
+      font-size: 11.5px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 3px;
+      overflow-wrap: anywhere
+    }
+
+    .emsg .ebody {
+      font-size: 13.5px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin-top: 9px
+    }
+
+    .emsg .ebody.fold {
+      max-height: 15em;
+      overflow: hidden;
+      position: relative
+    }
+
+    .emsg .ebody.fold::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3em;
+      background: linear-gradient(to bottom, transparent, var(--panel))
+    }
+
+    .emsg .more2 {
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      background: 0;
+      border: 0;
+      padding: 5px 0 0;
+      cursor: pointer
+    }
+
+    .emsg .num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--p3bg);
+      border-radius: 999px;
+      padding: 1px 8px
+    }
+
+    details.more {
+      margin-top: 8px
+    }
+
+    details.more summary {
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--accent)
+    }
+
+    details.more ul {
+      margin: 6px 0 0 18px;
+      padding: 0;
+      font-size: 13px;
+      color: var(--muted)
+    }
+
+    .jump {
+      position: absolute;
+      top: -17px;
+      left: 50%;
+      transform: translateX(-50%);
+      font: inherit;
+      font-size: 12px;
+      padding: 5px 13px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .10);
+      cursor: pointer;
+      z-index: 3
+    }
+
+    .jump:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    footer {
+      position: relative;
+      border-top: 1px solid var(--line);
+      background: var(--bg);
+      padding: 12px 20px 10px
+    }
+
+    /* One surface with the controls inside it, rather than four boxes in a row
+       trying to line up: they had four different paddings and heights, which
+       is what looked crooked. Nothing here aligns to anything else now --
+       the shell is the alignment. */
+    .composer {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+      transition: border-color .15s, box-shadow .15s
+    }
+
+    .composer:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 2px rgba(0, 0, 0, .04)
+    }
+
+    .composer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px
+    }
+
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    /* One height for everything on that row. */
+    .composer-bar #engine,
+    .composer-actions .mic,
+    .composer-actions #send {
+      height: 34px;
+      box-sizing: border-box
+    }
+
+    textarea {
+      width: 100%;
+      resize: none;
+      font: inherit;
+      font-size: 14.5px;
+      line-height: 1.5;
+      padding: 3px 2px;
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      min-height: 24px;
+      max-height: 150px
+    }
+
+    textarea::placeholder {
+      color: var(--muted)
+    }
+
+    /* The shell owns the focus ring, so the field must not draw its own. */
+    textarea:focus {
+      outline: none
+    }
+
+    button {
+      font: inherit;
+      font-weight: 600;
+      padding: 10px 18px;
+      border-radius: 10px;
+      border: 0;
+      background: var(--accent);
+      color: var(--on-accent);
+      cursor: pointer
+    }
+
+    #send {
+      padding: 0 18px;
+      border-radius: 999px;
+      font-size: 13.5px
+    }
+
+    /* Nothing to send is a state worth showing, rather than a click that
+       quietly does nothing. */
+    #send:disabled {
+      opacity: .45;
+      cursor: default
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: default
+    }
+
+    /* One row that scrolls, not a block that grows: the suggestions change
+       every turn, and a footer that changes height with them makes the
+       transcript jump. */
+    .chips {
+      max-width: 900px;
+      margin: 0 auto 9px;
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 2px
+    }
+
+    .chips::-webkit-scrollbar {
+      display: none
+    }
+
+    /* The row scrolls with no scrollbar, so without this the only hint that
+       there are more chips is one clipped mid-word at the edge. Set by JS and
+       only when it actually overflows, so a row that fits is not faded for
+       nothing. */
+    .chips.more {
+      mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent)
+    }
+
+    .chips .chip {
+      flex: 0 0 auto
+    }
+
+    .chip {
+      font-size: 12.5px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .hint {
+      max-width: 900px;
+      margin: 0 auto;
+      font-size: 11px;
+      color: var(--muted);
+      opacity: .8;
+      padding-top: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .noVerticalScroll {
+      overflow-y: hidden;
+    }
+
+    .botname {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    /* The mark: three bars sorted by length -- the priority lanes this tool
+       puts oncalls into -- with the top one carrying a pulse for the health
+       records they are about. It is drawn from --p0/--p1/--p2, the same
+       tokens the severity pills use, so the logo is made of the severities
+       the tool sorts by rather than a colour invented for it.
+       Decorative: the word "Triage" is right beside it. */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .mark {
+      display: block;
+      flex: none;
+      overflow: visible;
+    }
+  </style>
+</head>
+
+<body class="noVerticalScroll">
+  <header>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2">
+          <path stroke="var(--p0, #c0243a)" d="M3 6.5h4.2l1.7-3.2 2 6.4 1.3-3.2H21"/>
+          <path stroke="var(--p1, #d9722b)" d="M3 13.5h11"/>
+          <path stroke="var(--p2, #a8871f)" d="M3 20h7"/>
+        </g>
+      </svg>
+      <div class="botname">
+        <h1>Triage</h1>
+        <span class="addr">oncallbot</span>
+      </div>
+    </div>
+    <span class="addr" id="addr" style="display: none;"></span>
+    <div class="stats" id="stats" style="visibility: hidden;"></div>
+    <button id="theme" class="reset themebtn" type="button"><span class="ti" id="themeicon"
+        aria-hidden="true">◐</span></button>
+    <button id="routingprompt" class="reset"
+      title="See and edit the prompt that decides what each message becomes">Routing prompt</button>
+    <button id="chatlist" class="reset" title="Switch between this session's chats">Chats</button>
+    <button id="newchat" class="reset" title="Start another chat, keeping this one">New chat</button>
+    <button id="signout" class="reset" hidden>Sign out</button>
+  </header>
+
+  <div id="log">
+    <div class="turn">
+      <div class="msg bot" id="greeting">Loading…</div>
+    </div>
+  </div>
+
+  <div class="backdrop" id="backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="mtitle">
+    <div class="modal" id="modal">
+      <div class="mhead">
+        <div style="flex:1">
+          <h2 id="mtitle">Thread</h2>
+          <div class="sub" id="msub"></div>
+        </div>
+        <a id="mlink" href="#" target="_blank" rel="noopener">open in Gmail</a>
+        <button class="xbtn" id="mclose" aria-label="Close">×</button>
+      </div>
+      <div class="mbody" id="mbody"></div>
+    </div>
+  </div>
+
+  <div id="chatpanel" hidden role="dialog" aria-label="Chats in this session">
+    <div class="chatpanel-head">
+      <b>Chats</b>
+      <button id="chatnew" class="reset">+ New chat</button>
+    </div>
+    <div id="chatitems"></div>
+    <div class="hint">Kept for this browser session. A reload starts fresh.</div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <footer>
+    <button id="jump" class="jump" hidden title="Follow the answer again">
+      Jump to latest <span aria-hidden="true">↓</span>
+    </button>
+    <div class="chips" id="chips"></div>
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="Show oncalls from the last 2 days…"></textarea>
+      <div class="composer-bar">
+        <span class="enginewrap">
+          <span class="enginedot" id="enginedot" aria-hidden="true"></span>
+          <select id="engine" title="Which model answers" aria-label="Model"></select>
+        </span>
+        <span class="composer-actions">
+          <button id="mic" class="mic" hidden aria-pressed="false" title="Dictate your question">
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+              <path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
+              <path fill="currentColor" d="M18 12a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.9V22h2v-2.1A8 8 0 0 0 20 12h-2z" />
+            </svg>
+            <span class="sr-only">Dictate</span>
+          </button>
+          <button id="send">Send</button>
+        </span>
+      </div>
+    </div>
+    <div class="hint" id="foot">Summaries derive from patient data — see docs/deploy.md before exposing this.</div>
+  </footer>
+
+  <script>
+    const log = document.getElementById('log');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+    let busy = false;
+    // Whatever is streaming right now. Aborting the fetch closes the SSE
+    // connection, which is what the server watches for to kill its model call --
+    // so Stop stops the work, not just the listening.
+    let inFlight = null;
+
+    function stopInFlight() {
+      if (!inFlight) return false;
+      const c = inFlight;
+      inFlight = null;
+      c.abort();
+      return true;
+    }
+
+    function isAbort(err) {
+      return err && (err.name === 'AbortError' || err.message === 'aborted');
+    }
+    // Conversation memory lives here and rides along on each request; the server
+    // keeps no session state.
+    const MAX_HISTORY = 8;
+    let history = [];
+    let greetingText = '';
+    // Set from /api/context: no point offering a video that is not installed.
+    let HAS_HELP_VIDEO = false;
+
+    // The cold-start chips. Kept as the default for a fresh chat, and replaced
+    // by suggestions drawn from the conversation once a turn has happened.
+    const SUGGESTIONS = [
+      "Show oncalls from the last 2 days",
+      "Oncalls of 15th August 2026",
+      "This week's oncalls",
+      "Divide this week's oncalls into categories",
+      "Summarize all of yesterday's oncalls",
+    ];
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+    // Answers derive from untrusted email, so escape first and then allow exactly
+    // two inline forms back in. Applied only on finalize -- a half-arrived '**'
+    // would otherwise flicker.
+    // Hosts whose links are ours: a label alone is enough, because where it
+    // goes is not in question.
+    const KNOWN_HOSTS = [
+      '1mg.com', 'unifiedadmin.1mg.com', 'mail.google.com',
+      '1mg-droplet-production-internal.s3.ap-south-1.amazonaws.com',
+    ];
+
+    function linkLabel(url) {
+      let host = '', path = '';
+      try {
+        const u = new URL(url);
+        host = u.hostname;
+        path = u.pathname;
+      } catch { return url; }
+
+      const file = decodeURIComponent(path.split('/').filter(Boolean).pop() || '');
+      const ext = (file.split('.').pop() || '').toLowerCase();
+      const signed = /x-amz-signature|[?&]sig=|expires=/i.test(url);
+      const trusted = KNOWN_HOSTS.some(h => host === h || host.endsWith('.' + h));
+
+      let what = 'link';
+      if (ext === 'pdf') what = signed ? 'signed report (PDF)' : 'report (PDF)';
+      else if (ext === 'json') what = signed ? 'signed JSON report' : 'JSON report';
+      else if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) what = 'image';
+      else if (file) what = file.length > 28 ? file.slice(0, 25) + '…' : file;
+
+      // An unknown host is always named. A link out of a support ticket must
+      // never be able to look like one of ours.
+      return trusted ? `open ${what}` : `open ${what} at ${host}`;
+    }
+
+    // A URL becomes a labelled link rather than a wall of characters. The full
+    // URL stays in the title, and the host is in the label whenever it is not
+    // one of ours -- this prose derives from untrusted email, so a link out of
+    // a ticket has to be visibly not ours before it is clicked.
+    function linkify(escaped) {
+      return escaped.replace(/https?:\/\/[^\s<>"'`)]+/g, (match) => {
+        // Trailing punctuation belongs to the sentence, not the URL.
+        const trail = match.match(/[.,;:!?]+$/);
+        const url = trail ? match.slice(0, -trail[0].length) : match;
+        const raw = url.replace(/&amp;/g, '&');
+        return `<a class="urlink" href="${raw}" target="_blank" rel="noopener noreferrer"`
+          + ` title="${url}">${esc(linkLabel(raw))}<span class="ext" aria-hidden="true">\u2197</span></a>`
+          + (trail ? trail[0] : '');
+      });
+    }
+
+    function formatInline(text) {
+      return linkify(esc(text))
+        .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+        // The prompts ask for bold and code only, but a model still reaches for
+        // italics now and then. Rendering it beats showing the reader asterisks.
+        .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    }
+
+    // The model writes its diagnosis as a bullet list, so render one. Done line by
+    // line on purpose: a line that is still arriving is already an <li> in its
+    // final position, and only its inline marks resolve when it completes -- so
+    // the finished panel looks exactly like the streaming one.
+    function formatBlocks(text, streaming) {
+      const lines = String(text || '').split('\n');
+      let out = '', open = false, fenced = false;
+      lines.forEach((raw, i) => {
+        const line = raw.replace(/\s+$/, '');
+        // Resolving a half-typed '**' would flicker, so the line in flight is
+        // escaped only.
+        const render = (t) => (streaming && i === lines.length - 1) ? esc(t) : formatInline(t);
+        // ``` fences. The prompts ask for backticks and a local model reaches
+        // for a fence anyway; without this the marker rendered as literal
+        // ``` on its own line, with the content as ordinary prose.
+        if (/^\s*```/.test(line)) {
+          if (open) { out += '</ul>'; open = false; }
+          out += fenced ? '</code></pre>' : '<pre class="block"><code>';
+          fenced = !fenced;
+          return;
+        }
+        if (fenced) { out += esc(raw) + '\n'; return; }
+        if (!line.trim()) { if (open) { out += '</ul>'; open = false; } return; }
+        const m = line.match(/^(\s*)[-*\u2022]\s+(.*)$/);
+        if (m) {
+          if (!open) { out += '<ul class="pts">'; open = true; }
+          out += `<li${m[1].length >= 2 ? ' class="sub"' : ''}>${render(m[2])}</li>`;
+        } else {
+          if (open) { out += '</ul>'; open = false; }
+          out += `<p>${render(line)}</p>`;
+        }
+      });
+      if (open) out += '</ul>';
+      // A fence still open is one the model has not closed yet.
+      if (fenced) out += '</code></pre>';
+      return out;
+    }
+
+    // What a follow-up needs in order to answer without re-reading Gmail.
+    function compactRow(r) {
+      const out = {
+        thread_id: r.thread_id,
+        subject: (r.subject || '').slice(0, 140),
+        last_at: r.last_at || r.last_message_at || '',
+      };
+      if (r.messages != null) out.messages = r.messages;
+      if ((r.order_ids || []).length) out.order_ids = r.order_ids;
+      if ((r.attachments || []).length) out.attachments = r.attachments.length;
+      if (r.severity) out.severity = r.severity;
+      if (r.category) out.category = r.category;
+      if (r.group) out.group = r.group;
+      if (r.closed != null) out.closed = r.closed;
+      if (r.issue) out.issue = String(r.issue).slice(0, 180);
+      return out;
+    }
+
+    // A diagnosis the user opened after the fact belongs on that turn's row, so
+    // "how many are closed" can be answered from the conversation.
+    function noteDiagnosis(threadId, d) {
+      for (const turn of history) {
+        for (const row of (turn.rows || [])) {
+          if (row.thread_id === threadId) {
+            row.closed = !!d.thread_closed;
+            row.closure_confidence = d.closure_confidence;
+            if (d.closed_by) row.closed_by = d.closed_by;
+            row.checks_failed = (d.checks || []).filter(c => !c.passed).length;
+            if (d.runbook) row.runbook = d.runbook;
+          }
+        }
+      }
+    }
+
+    // The same badge in both places, from the same fields: read from the thread,
+    // never derived from anything else. Absent means nobody read it -- a summary
+    // cached before this existed, say -- and that is not the same as open, so
+    // nothing is shown.
+    function stateBadge(s) {
+      if (s == null || s.closed == null) return '';
+      const closed = !!s.closed;
+      const conf = typeof s.closure_confidence === 'number'
+        ? ` · confidence ${s.closure_confidence.toFixed(2)}` : '';
+      const who = closed && s.closed_by
+        ? ` Closed by ${s.closed_by}${s.closed_at ? ` on ${s.closed_at}` : ''}.` : '';
+      const why = s.closure_reason ? ` ${s.closure_reason}` : '';
+      return `<span class="vd ${closed ? 'closed' : 'open'}" title="${esc(
+        (closed ? 'A reply in the thread resolves it' : 'No reply in the thread clearly resolves it')
+        + conf + who + why)}">${closed ? 'email closed' : 'email open'}</span>`;
+    }
+
+    function sourceBadge(src) {
+      if (src === 'cache') return '<span class="src cache" title="Read from the local store; Gmail was not checked">local store</span>\n';
+      if (src === 'gmail') return '<span class="src gmail" title="Fetched live from the Gmail API">live from gmail</span>\n';
+      if (src === 'admin_api') return '<span class="src api" title="Read live from the internal admin APIs (read-only)">live from admin api</span>\n';
+      if (src === 'context') return '<span class="src ctx" title="Answered from this conversation — nothing was re-fetched">from this chat</span>\n';
+      return '';
+    }
+
+    let toastTimer = null;
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 1500);
+    }
+
+    async function copyText(text, el) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // Fallback for a non-secure context or a denied permission.
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch { toast('Could not copy'); ta.remove(); return; }
+        ta.remove();
+      }
+      if (el) {
+        // A class, not a text swap: the tick is generated content, so it
+        // cannot end up inside whatever gets copied next.
+        el.classList.add('copied');
+        setTimeout(() => el.classList.remove('copied'), 900);
+      }
+      const shown = text.length > 48 ? text.slice(0, 45) + '…' : text;
+      toast('Copied ' + shown);
+    }
+
+    // Text that is not a code chip but is still worth copying -- a subject, a
+    // sender. Wrapped rather than given a button beside it: the words are the
+    // control, and a widget next to every one of them was clutter.
+    function copyable(text, label) {
+      return `<span class="copytext" data-copy="${esc(text)}"`
+        + ` title="Click to copy ${esc(label || 'this')}">${esc(text)}</span>`;
+    }
+
+    // Delegated once on the document: every code chip is click-to-copy, and any
+    // element carrying data-copy copies that instead.
+    document.addEventListener('click', (e) => {
+      // A link is for following. Copying it instead would swallow the click.
+      if (e.target.closest('a[href]')) return;
+      const btn = e.target.closest('[data-copy]');
+      if (btn) {
+        e.preventDefault(); e.stopPropagation();
+        copyText(btn.dataset.copy, btn);
+        return;
+      }
+      const code = e.target.closest('code');
+      if (code && code.textContent.trim()) {
+        e.preventDefault();
+        copyText(code.textContent.trim(), code);
+      }
+    }, true);
+
+    function turn() { const t = document.createElement('div'); t.className = 'turn'; log.appendChild(t); return t; }
+    // Streaming keeps the newest text in view -- until the reader scrolls up,
+    // which means they are reading and cannot keep pace with the model. Then
+    // it stops, and resumes only when they come back to the bottom.
+    //
+    // No flag is needed to tell a programmatic scroll from a real one: ours
+    // lands AT the bottom, so the handler below recomputes to true and
+    // stickiness survives it. A scroll that ends anywhere else was the reader.
+    let stickToBottom = true;
+    // Within a line or two of the end still counts as "at the bottom", so a
+    // trackpad nudge does not switch autoscroll off.
+    const BOTTOM_SLACK = 48;
+
+    function atBottom() {
+      return log.scrollHeight - log.scrollTop - log.clientHeight <= BOTTOM_SLACK;
+    }
+
+    log.addEventListener('scroll', () => {
+      stickToBottom = atBottom();
+      syncJump();
+    });
+
+    function scroll(force) {
+      if (!force && !stickToBottom) return;
+      stickToBottom = true;
+      log.scrollTop = log.scrollHeight;
+      syncJump();
+    }
+
+    // Offered only when it is the answer they are missing: scrolled away while
+    // one is still arriving. Scrolling back down by hand does the same thing.
+    function syncJump() {
+      const btn = document.getElementById('jump');
+      if (btn) btn.hidden = stickToBottom || !busy;
+    }
+
+    function bubble(parent, cls, text) {
+      const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text;
+      parent.appendChild(d); scroll(); return d;
+    }
+
+    function idBlob(a) {
+      if (!a) return '';
+      const parts = [];
+      for (const [k, v] of Object.entries(a)) {
+        if (Array.isArray(v) && v.length) parts.push(...v.map(x => `<code>${esc(x)}</code>`));
+      }
+      // Joined with a space as well as laid out with gap: if the flex rule is
+      // ever lost, inline wrapping still has somewhere to break.
+      return parts.join(' ');
+    }
+
+    function summaryCard(s) {
+      const sev = (s.severity || 'p3').toLowerCase();
+      const ids = idBlob(s.affected);
+      const extras = [];
+      if (s.asks && s.asks.length) extras.push(['Asking for', s.asks]);
+      if (s.missing_info && s.missing_info.length) extras.push(['Still needed', s.missing_info]);
+      return `<div class="card">
+    <h3><span class="pill ${sev}">${esc(sev.toUpperCase())}</span>
+        <span class="sub">${esc(s.subject || '(no subject)')}</span></h3>
+    <div class="cat">${esc(s.category || '')}${s.confidence != null ? ' · confidence ' + Number(s.confidence).toFixed(2) : ''}</div>
+    ${stateBadge(s) ? `<div class="cstate">${stateBadge(s)}</div>` : ''}
+    <div class="issue">${esc(s.issue || '')}</div>
+    ${ids ? `<div class="ids">${ids}</div>` : ''}
+    ${extras.length ? `<details class="more"><summary>Details</summary>${extras.map(([h, items]) => `<div><strong style="font-size:12px">${esc(h)}</strong><ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')
+          }${s.summary ? `<div><strong style="font-size:12px">Summary</strong><ul><li>${esc(s.summary)}</li></ul></div>` : ''}</details>` : ''}
+    <div class="meta">
+      ${s.reporter ? `<span>${esc(s.reporter)}</span>` : ''}
+      ${s.suggested_owner ? `<span>→ ${esc(s.suggested_owner)}</span>` : ''}
+      ${s.permalink ? `<a href="${esc(s.permalink)}" target="_blank" rel="noopener">open in Gmail</a>` : ''}
+    </div>
+  </div>`;
+    }
+
+    const DAY_MS = 86400000;
+
+    function dayKey(iso) { return (iso || '').slice(0, 10); }
+
+    function fmtDay(key) {
+      if (!key) return 'Unknown date';
+      const d = new Date(key + 'T00:00:00');
+      return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    function relDay(key) {
+      if (!key) return '';
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const d = new Date(key + 'T00:00:00');
+      const n = Math.round((today - d) / DAY_MS);
+      if (n === 0) return 'today';
+      if (n === 1) return 'yesterday';
+      if (n > 1 && n < 7) return n + ' days ago';
+      return '';
+    }
+
+    function fmtTime(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d)) return iso.slice(11, 16);
+      return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function kb(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+
+    function threadCard(t) {
+      const atts = (t.attachments || []).map(a =>
+        `<span class="att" data-copy="${esc(a.filename)}" title="Copy ${esc(a.filename)}"`
+        + ` style="cursor:copy">${esc(a.filename)} · ${kb(a.size_bytes || 0)}</span>`).join('');
+      const people = (t.participants || []).length > 1
+        ? `<b>${esc(t.participants[0])}</b> + ${t.participants.length - 1} other${t.participants.length > 2 ? 's' : ''}`
+        : `<b>${esc(t.opened_by || t.last_from || 'unknown')}</b>`;
+      const span = (t.first_at && dayKey(t.first_at) !== dayKey(t.last_at))
+        ? ` · opened ${esc(dayKey(t.first_at))}` : '';
+      const label = t.has_summary ? 'Show summary' : 'Summarize';
+      const cls = t.has_summary ? 'sumbtn cached' : 'sumbtn';
+
+      return `<div class="tcard" data-thread="${esc(t.thread_id)}">
+    <div class="top">
+      <h3>${copyable(t.subject, 'subject')}</h3>
+      <div class="time">${esc(fmtTime(t.last_at))}</div>
+    </div>
+    <div class="who">${people} · ${esc(t.messages)} message${t.messages == 1 ? '' : 's'}${span}</div>
+    ${t.snippet ? `<div class="snip clamped">${esc(t.snippet)}</div>` : ''}
+    ${atts ? `<div>${atts}</div>` : ''}
+    <div class="foot">
+      ${(t.attachments || []).length ? `<span class="chipm">${t.attachments.length} attachment${t.attachments.length == 1 ? '' : 's'}</span>` : ''}
+      ${t.permalink ? `<a href="${esc(t.permalink)}" target="_blank" rel="noopener">open in Gmail</a>` : ''}
+      <span class="spacer"></span>
+      <button class="readbtn" data-act="read">Read thread</button>
+      ${(t.order_ids || []).length ? `<button class="dxbtn" data-act="diagnose" data-order="${esc(t.order_ids[0])}" title="Check the edit-patient runbooks against ${esc(t.order_ids[0])}">Diagnose</button>` : ''}
+      <button class="${cls}" data-act="summarize">${label}</button>
+    </div>
+    <div class="slot"></div>
+  </div>`;
+    }
+
+    function threadList(rows) {
+      // Grouped by the day of the latest message, newest day first.
+      const groups = new Map();
+      rows.forEach(r => {
+        const k = dayKey(r.last_at);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(r);
+      });
+      const keys = [...groups.keys()].sort().reverse();
+      return keys.map(k => {
+        const rel = relDay(k);
+        const items = groups.get(k)
+          .sort((a, b) => (b.last_at || '').localeCompare(a.last_at || ''))
+          .map(threadCard).join('');
+        return `<div class="daygroup"><span class="d">${esc(fmtDay(k))}</span>` +
+          (rel ? `<span class="rel">${esc(rel)}</span>` : '') +
+          `<span class="rule"></span><span class="rel">${groups.get(k).length}</span></div>` +
+          `<div class="cards">${items}</div>`;
+      }).join('');
+    }
+
+    // One collapsed accordion section per category: the point of asking for
+    // categories is the breakdown, so the counts are the answer and the cards are
+    // the detail behind them. Every card is in the DOM, just hidden, so expanding
+    // is instant and Summarize/Diagnose keep working on what was already opened.
+    // The heading count is the number of cards actually rendered below it, so it
+    // cannot disagree with what is shown.
+    let accSeq = 0;
+    function groupedList(groups, rows) {
+      const byId = new Map((rows || []).map(r => [r.thread_id, r]));
+      // A single category is not a breakdown -- there is nothing to choose
+      // between, so it opens rather than hiding the whole answer behind a click.
+      const single = (groups || []).length === 1;
+      return (groups || []).map(g => {
+        const list = (g.thread_ids || []).map(id => byId.get(id)).filter(Boolean)
+          .sort((a, b) => (b.last_at || '').localeCompare(a.last_at || ''));
+        if (!list.length) return '';
+        const id = 'acc' + (++accSeq);
+        return `<div class="acc${single ? ' open' : ''}">` +
+          `<button class="acchead" type="button" aria-expanded="${single}" aria-controls="${id}">` +
+          `<span class="chev">\u25b8</span>` +
+          `<span class="lbl">${esc(g.label)}</span>` +
+          `<span class="n">${list.length}</span>` +
+          (g.description ? `<span class="desc">${esc(g.description)}</span>` : '') +
+          `</button>` +
+          `<div class="cards" id="${id}">${list.map(threadCard).join('')}</div>` +
+          `</div>`;
+      }).join('');
+    }
+
+    function timeline(label, created, changes) {
+      if (!created && !(changes || []).length) return '';
+      const rows = (changes || []).map(c =>
+        `<li>${esc(c.from_value || '?')} → ${esc(c.to_value || '?')} at ${esc(c.changed_at || 'unknown')}`
+        + (c.actor_id ? ` by <code>${esc(c.actor_id)}</code>` : '') + `</li>`).join('');
+      return `<div class="tl"><div class="h">${esc(label)}</div>`
+        + `<div style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">at creation: ${esc(created || 'unknown')}</div>`
+        + (rows ? `<ul style="margin:4px 0 0 16px;padding:0">${rows}</ul>` : '') + `</div>`;
+    }
+
+    function code(v) { return v ? `<code>${esc(v)}</code>` : '<code>?</code>'; }
+
+    function checkList(checks) {
+      if (!(checks || []).length) return '';
+      return `<ul class="checks">` + checks.map(c => {
+        const ok = !!c.passed;
+        return `<li>
+      <span class="mk ${ok ? 'ok' : 'no'}" aria-hidden="true">${ok ? '✓' : '✗'}</span>
+      <span class="lbl">${esc(c.label)}</span>
+      <span class="sr-only">${ok ? 'passed' : 'failed'}</span>
+      ${c.detail ? `<span class="why">${formatInline(c.detail)}</span>` : ''}
+    </li>`;
+      }).join('') + `</ul>`;
+    }
+
+    // One renderer for the whole life of the panel. While the diagnosis is still
+    // arriving it is called with a partial `d` and `live`; when it finishes it is
+    // called with the real one. Everything decided in code is therefore already in
+    // its final position and final markup, and the last repaint only appends the
+    // sections below the prose -- so the panel never jumps.
+    function diagnosisPanel(d, ogid, live) {
+      const streaming = !!(live && live.streaming);
+      // No verdict yet: the thread has been read but the checks have not run.
+      const v = (d.verdict || (streaming ? '' : 'indeterminate')).toLowerCase();
+      const trim = t => String(t || '').replace(/\.+\s*$/, '');
+      // Decided by reading the thread, not by the checks: a ticket can be closed
+      // with a failed check, or open with every check passing.
+      const closed = !!d.thread_closed;
+      // Same badge as the summary shows, from the same reading of the thread.
+      const state = stateBadge({
+        closed: d.thread_closed == null ? null : closed,
+        closure_confidence: d.closure_confidence,
+        closed_by: d.closed_by, closed_at: d.closed_at,
+      });
+      const who = closed && d.closed_by
+        ? ` Closed by ${esc(d.closed_by)}${d.closed_at ? ` on ${esc(d.closed_at)}` : ''}.` : '';
+      const needs = (d.closure_reason || who)
+        ? `<div class="dxnote">${d.closure_reason ? esc(trim(d.closure_reason)) + '.' : ''}${who}</div>`
+        : '';
+
+      // Last element, so it can disappear on the final repaint without moving
+      // anything above it.
+      const wait = (streaming && live.status)
+        ? `<div class="sklabel dxwait">${esc(live.status)}</div>` : '';
+
+      if (v === 'indeterminate') {
+        return `<div class="dxwrap">
+    <div class="panelhead"><span class="panelname">Diagnosis</span>${promptCta('diagnosis')}</div>
+    ${traceBlock(live)}
+      <span class="vd indeterminate">checks not run</span>
+      ${state}
+      ${needs}
+      <div style="margin-top:8px">${formatBlocks(d.blocked_because || 'Could not establish anything.')}</div>
+      ${d.auth_expired ? `<div class="sumerr" style="margin-top:6px">Your admin token has expired — re-copy it into <code>.env</code>.</div>` : ''}
+      ${(d.trail || []).length ? `<div class="dxtrail">got as far as: ${esc((d.trail || []).join(' · '))}</div>` : ''}
+      ${wait}
+    </div>`;
+      }
+
+      const failed = (d.checks || []).filter(c => !c.passed).length;
+      const badge = !v ? ''
+        : failed
+          ? `<span class="vd mismatch">${failed} check${failed > 1 ? 's' : ''} failed</span>`
+          : `<span class="vd match">all checks passed</span>`;
+
+      const steps = (d.resolution || []).map(x => `<li>${formatInline(x)}</li>`).join('');
+      // Which prose this is was settled by the checks, before a word of it arrived.
+      const prose = failed ? (d.reason || '') : (d.other_findings || '');
+      const proseSec = !v ? '' : `<div class="dxsec">
+      <div class="h">${failed ? 'Why it failed' : 'No runbook fired — what the evidence does show'}</div>
+      <div data-slot="prose"${streaming ? ' class="tail"' : ''}>${formatBlocks(prose, streaming)}</div>
+    </div>`;
+
+      // The findings usually end by naming one further check. When a documented
+      // read could answer it, it was run -- so this section shows what was called
+      // and what came back, in the same shape as everything above it.
+      const fq = d.followup_question || '';
+      const calls = (d.followup_calls || []).map(c =>
+        c.tool
+          ? `<span class="fcall"><code>${esc(c.tool)}</code>${c.params ? ` <span class="fp">${esc(c.params)}</span>` : ''} → ${esc(c.outcome || '')}</span>`
+          : `<span class="fcall none">${esc(c.outcome || '')}</span>`).join('');
+      const followSec = (fq || d.followup_findings) ? `<div class="dxsec">
+      <div class="h">Further check — run against the admin API</div>
+      <div class="dxnote">${formatInline(fq)}</div>
+      ${calls ? `<div class="fcalls">${calls}</div>` : ''}
+      <div data-slot="followup"${(streaming && live.stage === 'followup') ? ' class="tail"' : ''}>${formatBlocks(d.followup_findings || '', streaming)}</div>
+    </div>` : '';
+
+      return `<div class="dxwrap">
+    <div class="panelhead"><span class="panelname">Diagnosis</span>${promptCta('diagnosis')}</div>
+    ${traceBlock(live)}
+    ${badge}
+    ${state}
+    ${d.runbook ? `<span class="cat" style="margin-left:8px">${esc(d.runbook)}</span>` : ''}
+    ${needs}
+    ${checkList(d.checks)}
+    ${proseSec}
+    ${followSec}
+    ${(!streaming && v && !failed && !d.other_findings) ? `<div class="dxnote">The report and the patient record agree, so neither runbook applies to ${code(ogid)}.</div>` : ''}
+    ${timeline('Name history', d.name_created_as, d.name_changes)}
+    ${timeline('Gender history', d.gender_created_as, d.gender_changes)}
+    ${steps ? `<div class="dxsec"><div class="h">Resolution — dashboard only</div><ol class="steps">${steps}</ol></div>` : ''}
+    ${streaming ? '' : `<div class="dxtrail">order ${code(ogid)} · patient ${code(d.patient_id)} · booking ${code(d.booking_id)}</div>`}
+    ${wait}
+  </div>`;
+    }
+
+    // Every response goes through here. A 401 is not an error to render in a
+    // bubble: the session is gone, or the admin token is, and those need different
+    // treatment -- one is a re-login, the other a paste that keeps the chat.
+    class NeedsToken extends Error { }
+
+    async function guard(res) {
+      if (res.status !== 401) return res;
+      let body = {};
+      try { body = await res.json(); } catch { }
+      if (body.reason === 'hra_missing') { throw new NeedsToken(body.detail || 'Admin token needed.'); }
+      // Leave for the login page, saying why, and come back here afterwards.
+      const q = new URLSearchParams({ err: body.reason || 'session_expired' });
+      if (body.detail) q.set('detail', body.detail);
+      location.replace('/login?' + q.toString());
+      throw new Error(body.detail || 'Session expired.');
+    }
+
+    async function api(url, opts) {
+      return guard(await fetch(url, opts));
+    }
+
+    // The admin bearer lives ~10h and is never written to disk, so it is asked for
+    // when it is needed rather than at login: listing, reading and summarizing do
+    const UNIFIED_ADMIN_URL = 'https://unifiedadmin.1mg.com/';
+
+    // Linked by matching the phrase rather than by rendering links in general:
+    // this same formatter runs over model output derived from untrusted email,
+    // and a clickable link there would be a phishing vector.
+    function withDashboardLink(html) {
+      return html.replace(
+        /unified-admin dashboard/g,
+        `<a href="${UNIFIED_ADMIN_URL}" target="_blank" rel="noopener">unified-admin dashboard</a>`
+      );
+    }
+
+    // not touch the admin API at all. The chat is left exactly as it was.
+    function askForToken(message, onSaved) {
+      const box = document.createElement('div');
+      box.className = 'turn';
+      box.innerHTML = `<div class="msg bot tokenask">
+    <div class="tokhead"><b>Admin API token needed</b></div>
+    <div class="hint">${withDashboardLink(formatBlocks(message || ''))}</div>
+    <div class="tokrow">
+      <input type="password" placeholder="Bearer …" autocomplete="off" spellcheck="false">
+      <button class="sumbtn" data-act="save-token">Use it</button>
+    </div>
+    <div class="tokfoot">
+      ${HAS_HELP_VIDEO ? '<button class="videocta" data-act="see-video"><span aria-hidden="true">\u25b6</span> How to get token — see this video</button>' : ''}
+      <span class="hint">Held for this session only, never written to disk.</span>
+    </div>
+    <div class="sumerr" hidden></div>
+  </div>`;
+      log.appendChild(box);
+      const video = box.querySelector('[data-act="see-video"]');
+      if (video) video.onclick = () => showHelpVideo();
+      const input = box.querySelector('input');
+      const err = box.querySelector('.sumerr');
+      input.focus(); scroll();
+
+      const save = async () => {
+        const token = input.value.trim();
+        if (!token) { input.focus(); return; }
+        input.disabled = true;
+        try {
+          const r = await api('/api/session', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hra_token: token })
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          box.remove();
+          toast('Admin token saved for this session');
+          if (onSaved) onSaved();
+        } catch (e) {
+          err.textContent = 'Could not save that: ' + e.message;
+          err.hidden = false;
+          input.disabled = false;
+        }
+      };
+      box.querySelector('[data-act="save-token"]').onclick = save;
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+    }
+
+    // Both card CTAs stream over SSE, the same protocol the chat uses. Kept as an
+    // async generator so the callers read as a plain loop over events.
+    async function* sseEvents(url, body, signal) {
+      const res = await api(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // The edits ride along rather than being stored server-side.
+        body: JSON.stringify({ ...body, prompts: promptEdits }), signal
+      });
+      if (!res.ok) {
+        // A pre-flight failure (wrong account, unknown thread) is still a real
+        // HTTP error, so it carries a detail worth showing verbatim.
+        const d = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(d.detail || ('HTTP ' + res.status));
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        buf += dec.decode(value, { stream: true });
+        const chunks = buf.split('\n\n'); buf = chunks.pop();
+        for (const chunk of chunks) {
+          let ev = 'message', data = '';
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('event: ')) ev = line.slice(7).trim();
+            else if (line.startsWith('data: ')) data += line.slice(6);
+          }
+          if (!data) continue;
+          try { yield [ev, JSON.parse(data)]; } catch { /* skip a partial frame */ }
+        }
+      }
+    }
+
+    // One renderer for the whole life of the panel, same as the diagnosis one, so
+    // a summary that streamed in does not rearrange itself when it finishes.
+    //
+    // The order here is the order the model writes the fields in: the paragraph,
+    // then the one-line issue, then the chips -- which is why the paragraph is
+    // shown rather than folded into Details. Nothing that has already arrived
+    // moves to make room for what comes next.
+    function summaryPanel(s, live) {
+      const streaming = !!(live && live.streaming);
+      const sev = String(s.severity || '').toLowerCase();
+      // The header row exists from the first paint, so filling it in later cannot
+      // push the text below it down.
+      // A placeholder pill, not a guessed severity: the real pill is taller than
+      // bare text, so without it the header row grows by 10px when the severity
+      // lands and pushes the paragraph down.
+      const chips = sev
+        ? `<span class="pill ${sev}">${esc(sev.toUpperCase())}</span>
+       <span class="cat">${esc(s.category || '')}${s.confidence != null ? ' · confidence ' + Number(s.confidence).toFixed(2) : ''}</span>`
+        : `<span class="pill pending">…</span><span class="cat">${streaming ? 'summarizing…' : ''}</span>`;
+      const cursor = (name) => (streaming && live.field === name) ? ' tail' : '';
+      const ids = idBlob(s.affected);
+      const extras = [];
+      if (s.asks && s.asks.length) extras.push(['Asking for', s.asks]);
+      if (s.missing_info && s.missing_info.length) extras.push(['Still needed', s.missing_info]);
+      // Reserved at its widest while streaming, so the verdict landing at the end
+      // cannot wrap the header row and push the paragraph down.
+      const verdict = stateBadge(s)
+        || (streaming
+          ? '<span class="vd closed" style="visibility:hidden" aria-hidden="true">email closed</span>'
+          : '');
+      return `<div class="sumwrap">
+    <div class="panelhead"><span class="panelname">Summary</span>${promptCta('summary')}</div>
+    ${traceBlock(live)}
+    <div class="hdr">${chips}${verdict}</div>
+    <div data-slot="summary" class="sumtext${cursor('summary')}">${formatBlocks(s.summary || '', streaming)}</div>
+    <div data-slot="issue" class="livemeta${cursor('issue')}">${s.issue ? formatInline(s.issue) : ''}</div>
+    ${ids ? `<div class="ids">${ids}</div>` : ''}
+    ${extras.length ? `<details class="more"><summary>Details</summary>${extras.map(([h, items]) => `<div><strong style="font-size:12px">${esc(h)}</strong><ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')
+          }</details>` : ''}
+    ${s.suggested_owner ? `<div class="meta">→ ${esc(s.suggested_owner)}</div>` : ''}
+    ${(streaming && live.status) ? `<div class="sklabel dxwait">${esc(live.status)}</div>` : ''}
+  </div>`;
+    }
+
+    const backdrop = document.getElementById('backdrop');
+    const mbody = document.getElementById('mbody');
+    let lastFocus = null;
+
+    const THREAD_SKELETON = `<div class="emsg">
+  <div class="sk w35"></div><div class="sk w20"></div>
+  <div class="sk w95"></div><div class="sk w95"></div><div class="sk w80"></div>
+</div><div class="emsg">
+  <div class="sk w35"></div><div class="sk w20"></div>
+  <div class="sk w95"></div><div class="sk w60"></div>
+</div>`;
+
+    // The same modal the thread reader uses, so Esc / × / backdrop all work.
+    function showHelpVideo() {
+      document.getElementById('mtitle').textContent = 'Where to find the admin token';
+      // The modal is shared with the thread reader, whose Gmail link means
+      // nothing here.
+      document.getElementById('mlink').hidden = true;
+      mbody.innerHTML = `<div class="helpvid">
+    <video controls autoplay playsinline preload="metadata" src="/help/admin-token">
+      Your browser cannot play this video.
+    </video>
+    <div class="hint">unified-admin → DevTools → Application → Local Storage →
+      <code>accessToken</code></div>
+  </div>`;
+      openModal();
+    }
+
+    // --- editing the prompt behind an answer ------------------------------
+    //
+    // A prompt is behaviour, so the fastest way to fix a bad answer is to
+    // change the words and ask again. Edits live here, in memory: they travel
+    // with each request, a refresh resets them, and nothing is written down --
+    // one person's experiment cannot outlive their tab or reach anyone else.
+    const promptEdits = {};
+    let promptCatalog = null;
+
+    async function loadPromptCatalog() {
+      if (promptCatalog) return promptCatalog;
+      const r = await api('/api/prompts');
+      promptCatalog = await r.json();
+      return promptCatalog;
+    }
+
+    function promptCta(surface, label) {
+      return `<button class="promptcta" data-act="prompts" data-surface="${surface}"
+        title="See and edit the prompt behind this">${label || 'Prompt'}</button>`;
+    }
+
+    async function openPrompts(surface) {
+      const cat = await loadPromptCatalog();
+      const items = (cat.surfaces || {})[surface] || [];
+      document.getElementById('mtitle').textContent = 'Prompt';
+      document.getElementById('msub').textContent =
+        'Edited here for this tab only. A refresh restores the shipped wording.';
+      document.getElementById('mlink').hidden = true;
+      mbody.innerHTML = items.map((it, i) => `
+        <div class="promptbox" data-key="${esc(it.key)}">
+          <div class="promptlabel">${esc(it.label)}
+            <span class="edited" ${promptEdits[it.key] ? '' : 'hidden'}>edited</span>
+          </div>
+          <textarea class="prompttext" spellcheck="false"
+            aria-label="${esc(it.label)}">${esc(promptEdits[it.key] || it.text)}</textarea>
+          <div class="promptrow">
+            <button class="sumbtn" data-act="prompt-save" data-i="${i}">Use this</button>
+            <button class="linkbtn" data-act="prompt-reset" data-i="${i}">Reset</button>
+            <span class="hint promptnote"></span>
+          </div>
+        </div>`).join('') || '<div class="dxnote">No prompt for this yet.</div>';
+      // The shipped text, for Reset.
+      mbody._defaults = items.map(it => it.text);
+      mbody._keys = items.map(it => it.key);
+      openModal();
+    }
+
+    mbody.addEventListener('click', e => {
+      const save = e.target.closest('button[data-act="prompt-save"]');
+      const reset = e.target.closest('button[data-act="prompt-reset"]');
+      if (!save && !reset) return;
+      const btn = save || reset;
+      const box = btn.closest('.promptbox');
+      const area = box.querySelector('.prompttext');
+      const note = box.querySelector('.promptnote');
+      const key = box.dataset.key;
+      const i = Number(btn.dataset.i);
+      if (reset) {
+        area.value = mbody._defaults[i];
+        delete promptEdits[key];
+        box.querySelector('.edited').hidden = true;
+        note.textContent = 'Back to the shipped wording.';
+        return;
+      }
+      const text = area.value.trim();
+      if (!text) { note.textContent = 'An empty prompt would just use the default.'; return; }
+      promptEdits[key] = text;
+      box.querySelector('.edited').hidden = false;
+      note.textContent = 'Used from your next question.';
+    });
+
+    // Remembered on the live object, because the element it belongs to is
+    // replaced by the next delta.
+    log.addEventListener('click', e => {
+      const sum = e.target.closest('.thinking > summary');
+      if (!sum) return;
+      const det = sum.parentElement;
+      let el = det;
+      while (el && !el._live) el = el.parentElement;
+      // The browser flips `open` after this handler, so the new state is the
+      // opposite of what it reads right now.
+      if (el) el._live.traceOpen = !det.open;
+    });
+
+    document.getElementById('routingprompt').onclick = () => openPrompts('routing');
+
+    log.addEventListener('click', e => {
+      const cta = e.target.closest('button[data-act="prompts"]');
+      if (cta) { e.preventDefault(); openPrompts(cta.dataset.surface); }
+    });
+
+    function openModal() {
+      lastFocus = document.activeElement;
+      backdrop.hidden = false;
+      document.body.style.overflow = 'hidden';
+      document.getElementById('mclose').focus();
+    }
+
+    function closeModal() {
+      backdrop.hidden = true;
+      document.body.style.overflow = '';
+      mbody.innerHTML = '';
+      if (lastFocus) lastFocus.focus();
+    }
+
+    document.getElementById('mclose').onclick = closeModal;
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) closeModal(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !backdrop.hidden) { e.preventDefault(); closeModal(); }
+    });
+
+    // Long bodies fold; the quoted tail is usually the least interesting part.
+    const FOLD_CHARS = 900;
+
+    function messageBlock(m, i, total) {
+      const atts = (m.attachments || []).map(a =>
+        `<span class="att" title="${esc(a.mime_type)}">${esc(a.filename)} · ${kb(a.size_bytes || 0)}</span>`).join('');
+      const body = m.body || '(no text content)';
+      const long = body.length > FOLD_CHARS;
+      return `<div class="emsg">
+    <div class="eh">
+      <span class="num">${i + 1}/${total}</span>
+      <span class="who">${esc(_name(m.from))}</span>
+      <span class="when">${esc(fmtStamp(m.date))}</span>
+    </div>
+    <div class="addr">from ${copyable(m.from || '?', 'sender')}${m.to ? ` · to ${esc(m.to)}` : ''}${m.cc ? ` · cc ${esc(m.cc)}` : ''}</div>
+    ${atts ? `<div style="margin-top:7px">${atts}</div>` : ''}
+    <div class="ebody${long ? ' fold' : ''}">${esc(body)}</div>
+    ${long ? `<button class="more2" data-act="unfold">Show full message</button>` : ''}
+  </div>`;
+    }
+
+    function _name(addr) {
+      addr = (addr || '').trim();
+      if (addr.includes('<')) {
+        const n = addr.split('<')[0].trim().replace(/^"|"$/g, '');
+        return n || addr.split('<')[1].replace('>', '').trim();
+      }
+      return addr || 'unknown';
+    }
+
+    function fmtStamp(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d)) return iso;
+      return d.toLocaleString(undefined, {
+        day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    mbody.addEventListener('click', e => {
+      const b = e.target.closest('button[data-act="unfold"]');
+      if (!b) return;
+      b.previousElementSibling.classList.remove('fold');
+      b.remove();
+    });
+
+    async function showThread(threadId, subject) {
+      document.getElementById('mtitle').textContent = subject || 'Thread';
+      document.getElementById('msub').textContent = 'Loading from Gmail…';
+      document.getElementById('mlink').hidden = false;
+      document.getElementById('mlink').href = 'https://mail.google.com/mail/u/0/#all/' + threadId;
+      mbody.innerHTML = THREAD_SKELETON;
+      openModal();
+      try {
+        const r = await api(`/api/thread/${encodeURIComponent(threadId)}/messages`);
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({ detail: r.statusText }));
+          throw new Error(d.detail || ('HTTP ' + r.status));
+        }
+        const t = await r.json();
+        document.getElementById('mtitle').innerHTML =
+          copyable(t.subject || 'Thread', 'subject');
+        document.getElementById('msub').textContent =
+          `${t.messages.length} message${t.messages.length == 1 ? '' : 's'} · full text as received`;
+        mbody.innerHTML = t.messages.map((m, i) => messageBlock(m, i, t.messages.length)).join('');
+      } catch (err) {
+        document.getElementById('msub').textContent = '';
+        mbody.innerHTML = `<div class="emsg"><div class="sumerr">Could not load the thread: ${esc(err.message)}</div></div>`;
+      }
+    }
+
+    // Delegated: cards are injected as HTML, so bind once on the log.
+    // The summary is one JSON object being written, so the fields land in schema
+    // order and each one is painted into its final place as it closes.
+    async function streamSummary(card, btn, slot, signal) {
+      const s = {};
+      const live = { streaming: true, status: 'Summarizing…', field: '', trace: [] };
+      // Reachable from the delegated click below, and survives repaints.
+      slot._live = live;
+      const paint = () => { slot.innerHTML = summaryPanel(s, live); };
+      paint();
+
+      for await (const [ev, payload] of sseEvents(
+        '/api/summarize', { thread_id: card.dataset.thread }, signal)) {
+        if (ev === 'trace') { live.trace.push(payload); paint(); }
+        else if (ev === 'status') { live.status = payload; paint(); }
+        else if (ev === 'delta') {
+          if (payload.name !== 'summary' && payload.name !== 'issue') continue;
+          s[payload.name] = (s[payload.name] || '') + payload.text;
+          if (live.field !== payload.name) { live.field = payload.name; paint(); }
+          const node = slot.querySelector(`[data-slot="${payload.name}"]`);
+          if (node) node.innerHTML = payload.name === 'summary'
+            ? formatBlocks(s.summary, true) : esc(s.issue);
+          else paint();
+        }
+        else if (ev === 'field') {
+          // severity and category complete the header row that is already there.
+          if (payload.name === 'severity' || payload.name === 'category') {
+            s[payload.name] = payload.value;
+            paint();
+          }
+        }
+        else if (ev === 'error') { throw new Error(payload); }
+        else if (ev === 'summary') {
+          // Not null: the trace is part of the panel now, and the finished
+          // panel should still show how it got there.
+          slot.innerHTML = summaryPanel(payload.summary, done(live));
+          slot.dataset.loaded = '1';
+          btn.textContent = 'Hide summary';
+          btn.classList.add('cached');
+          refreshStats();
+          return;
+        }
+      }
+      throw new Error('the summary stream ended without a summary');
+    }
+
+    async function streamDiagnosis(card, btn, slot, signal) {
+      const ogid = btn.dataset.order || '';
+      // Accumulated as the events arrive, then handed to the same renderer the
+      // finished diagnosis uses. The closed/open read lands before any API call;
+      // the checks land before a word of prose.
+      const d = {
+        verdict: '', checks: [], reason: '', other_findings: '',
+        followup_question: '', followup_calls: [], followup_findings: ''
+      };
+      // Which prose is arriving. The server sends the followup event before its
+      // first delta, so the deltas after it belong to the further check.
+      const live = { streaming: true, status: 'Reading the thread…', stage: 'findings', trace: [] };
+      slot._live = live;
+      let text = '';
+      const paint = () => { slot.innerHTML = diagnosisPanel(d, ogid, live); };
+      paint();
+
+      for await (const [ev, payload] of sseEvents('/api/diagnose',
+        { thread_id: card.dataset.thread, order_group_id: ogid }, signal)) {
+        if (ev === 'trace') { live.trace.push(payload); paint(); }
+        else if (ev === 'status') { live.status = payload; paint(); }
+        else if (ev === 'state') { Object.assign(d, payload); paint(); }
+        else if (ev === 'checks') {
+          d.checks = payload;
+          // The verdict the badge shows is the checks, counted here -- the same
+          // arithmetic the server did, so the badge cannot change under it.
+          d.verdict = payload.some(c => !c.passed) ? 'mismatch' : 'match';
+          paint();
+        }
+        else if (ev === 'followup') {
+          d.followup_question = payload.question || '';
+          d.followup_calls = payload.calls || [];
+          live.stage = 'followup';
+          text = '';
+          paint();
+        }
+        else if (ev === 'delta') {
+          text += payload;
+          if (live.stage === 'followup') d.followup_findings = text;
+          else if (d.verdict === 'mismatch') d.reason = text;
+          else d.other_findings = text;
+          const node = slot.querySelector(
+            live.stage === 'followup' ? '[data-slot="followup"]' : '[data-slot="prose"]');
+          if (node) node.innerHTML = formatBlocks(text, true);
+          else paint();
+        }
+        else if (ev === 'needs_token') {
+          // The token was refused mid-stream, so it cannot be the 401 that
+          // the absent-token case returns. Same box either way, and the
+          // caller retries the diagnosis once a new one is pasted.
+          throw new NeedsToken(payload.detail || 'Admin token needed.');
+        }
+        else if (ev === 'error') { throw new Error(payload); }
+        else if (ev === 'diagnosis') {
+          noteDiagnosis(card.dataset.thread, payload.diagnosis);
+          // Same renderer, real diagnosis: the prose is already where it will
+          // stay, so this only fills in the sections below it.
+          slot.innerHTML = diagnosisPanel(
+            payload.diagnosis, payload.order_group_id, done(live));
+          slot.dataset.loaded = '1';
+          btn.textContent = 'Hide diagnosis';
+          return;
+        }
+      }
+      throw new Error('the diagnosis stream ended without a verdict');
+    }
+
+    log.addEventListener('click', async (e) => {
+      const head = e.target.closest('.acchead');
+      if (head) {
+        const open = head.parentElement.classList.toggle('open');
+        head.setAttribute('aria-expanded', open);
+        return;
+      }
+
+      const readBtn = e.target.closest('button[data-act="read"]');
+      if (readBtn) {
+        const c = readBtn.closest('.tcard');
+        showThread(c.dataset.thread, c.querySelector('h3').textContent);
+        return;
+      }
+
+      const dxBtn = e.target.closest('button[data-act="diagnose"]');
+      if (dxBtn) {
+        const card = dxBtn.closest('.tcard');
+        let slot = card.querySelector('.dxslot');
+        if (!slot) { slot = document.createElement('div'); slot.className = 'dxslot'; card.appendChild(slot); }
+        if (slot.dataset.loaded === '1') {
+          const open = slot.style.display !== 'none';
+          slot.style.display = open ? 'none' : '';
+          dxBtn.textContent = open ? 'Diagnose' : 'Hide diagnosis';
+          return;
+        }
+        // A second click while it runs is Stop, not a second diagnosis.
+        if (dxBtn.dataset.running === '1') {
+          dxBtn._stop && dxBtn._stop();
+          return;
+        }
+        const was = dxBtn.dataset.label || dxBtn.textContent;
+        dxBtn.dataset.label = was;
+        const ctl = new AbortController();
+        dxBtn.dataset.running = '1';
+        dxBtn._stop = () => ctl.abort();
+        dxBtn.textContent = 'Stop';
+        dxBtn.classList.add('stopping');
+        try {
+          await streamDiagnosis(card, dxBtn, slot, ctl.signal);
+        } catch (err) {
+          if (isAbort(err)) {
+            slot.innerHTML = `<div class="dxwrap"><div class="dxnote">Stopped.</div></div>`;
+            dxBtn.textContent = was;
+          } else if (err instanceof NeedsToken) {
+            slot.innerHTML = '';
+            dxBtn.textContent = was;
+            askForToken(err.message, () => dxBtn.click());
+          } else {
+            slot.innerHTML = `<div class="dxwrap"><div class="sumerr">Could not diagnose: ${esc(err.message)}</div></div>`;
+            dxBtn.textContent = was;
+          }
+        } finally {
+          delete dxBtn.dataset.running;
+          dxBtn._stop = null;
+          dxBtn.classList.remove('stopping');
+        }
+        return;
+      }
+
+      const btn = e.target.closest('button[data-act="summarize"]');
+      if (!btn) return;
+      const card = btn.closest('.tcard');
+      const slot = card.querySelector('.slot');
+      const id = card.dataset.thread;
+
+      if (slot.dataset.loaded === '1') {        // toggle an already-fetched summary
+        const open = slot.style.display !== 'none';
+        slot.style.display = open ? 'none' : '';
+        btn.textContent = open ? 'Show summary' : 'Hide summary';
+        return;
+      }
+
+      if (btn.dataset.running === '1') {
+        btn._stop && btn._stop();
+        return;
+      }
+      const was = btn.dataset.label || btn.textContent;
+      btn.dataset.label = was;
+      const ctl = new AbortController();
+      btn.dataset.running = '1';
+      btn._stop = () => ctl.abort();
+      btn.textContent = 'Stop';
+      btn.classList.add('stopping');
+      try {
+        await streamSummary(card, btn, slot, ctl.signal);
+      } catch (err) {
+        if (isAbort(err)) {
+          // Whatever arrived is discarded: a half-written summary is not one.
+          slot.innerHTML = `<div class="sumwrap"><div class="dxnote">Stopped.</div></div>`;
+          btn.textContent = was;
+        } else if (err instanceof NeedsToken) {
+          slot.innerHTML = '';
+          btn.textContent = was;
+          askForToken(err.message, () => btn.click());
+        } else {
+          slot.innerHTML = `<div class="sumwrap"><div class="sumerr">Could not summarize: ${esc(err.message)}</div></div>`;
+          btn.textContent = was;
+        }
+      } finally {
+        delete btn.dataset.running;
+        btn._stop = null;
+        btn.classList.remove('stopping');
+      }
+    });
+
+    async function ask(message) {
+      if (busy || !message.trim()) return;
+      finishTyping();
+      // They just sent it, so they want to see it -- whatever they were
+      // reading a moment ago.
+      stickToBottom = true;
+      busy = true; setSendMode('stop'); input.value = ''; input.style.height = 'auto';
+
+      bubble(turn(), 'me', message);
+      const t = turn();
+      const statusEl = document.createElement('div');
+      statusEl.className = 'status'; statusEl.textContent = '…';
+      t.appendChild(statusEl); scroll();
+
+      const ctl = new AbortController();
+      inFlight = ctl;
+
+      let res;
+      try {
+        res = await api('/api/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, history: history.slice(-MAX_HISTORY), prompts: promptEdits }),
+          signal: ctl.signal
+        });
+      } catch (e) {
+        statusEl.remove();
+        if (isAbort(e)) bubble(t, 'bot', 'Stopped.').classList.add('stopped');
+        else bubble(t, 'bot err', 'Could not reach the server: ' + e.message);
+        inFlight = null; busy = false; setSendMode('send'); input.focus();
+        if (pending) { const next = pending; pending = null; ask(next); }
+        return;
+      }
+
+      if (!res.ok) {
+        // Anything but a stream: say what the server said rather than parsing a
+        // JSON error as if it were SSE and showing nothing.
+        const d = await res.json().catch(() => ({ detail: 'HTTP ' + res.status }));
+        statusEl.remove();
+        bubble(t, 'bot err', d.detail || ('HTTP ' + res.status));
+        inFlight = null; busy = false; setSendMode('send'); input.focus();
+        if (pending) { const next = pending; pending = null; ask(next); }
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      const lines = [];
+      let answerEl = null, cardWrap = null, streamedCards = 0, needsToken = null;
+      // The markdown as it arrives. Rendering replaces the element's
+      // contents, so the text has to be kept separately.
+      let answerRaw = '';
+      const turnRecord = { message, action: '', params: {}, reply: '', rows: [] };
+
+      let stopped = false;
+      while (true) {
+        let value, done;
+        try {
+          ({ value, done } = await reader.read());
+        } catch (e) {
+          // An abort lands here. Whatever streamed stays on screen, labelled.
+          if (!isAbort(e)) throw e;
+          stopped = true;
+          break;
+        }
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const chunks = buf.split('\n\n'); buf = chunks.pop();
+        for (const chunk of chunks) {
+          let ev = 'message', data = '';
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('event: ')) ev = line.slice(7).trim();
+            else if (line.startsWith('data: ')) data += line.slice(6);
+          }
+          if (!data) continue;
+          let payload; try { payload = JSON.parse(data); } catch { continue; }
+
+          if (ev === 'intent') {
+            turnRecord.action = payload.action || '';
+            turnRecord.params = {
+              days: payload.days, after: payload.after, before: payload.before,
+              severities: payload.severities, categories: payload.categories,
+              search: payload.search, limit: payload.limit,
+              // Without this the router was told the last turn was an
+              // order_lookup but not which order, so "analyze the data" had
+              // nothing to continue and fell back to searching Gmail.
+              order_group_id: payload.order_group_id,
+            };
+          } else if (ev === 'status') {
+            lines.push(payload);
+            statusEl.textContent = lines.slice(-6).join('\n');
+            scroll();
+          } else if (ev === 'trace') {
+            traceInto(t, payload);
+            scroll();
+          } else if (ev === 'needs_token') {
+            // Not an error: the question was fine, we just cannot answer it yet.
+            // Same paste box as the cards use, then ask again for them.
+            statusEl.remove();
+            needsToken = payload;
+          } else if (ev === 'error') {
+            if (!answerEl) statusEl.remove();
+            bubble(t, 'bot err', payload);
+            turnRecord.reply = 'error: ' + payload;
+          } else if (ev === 'summary') {
+            // A card the moment its thread finishes, rather than all at the end.
+            if (!cardWrap) { cardWrap = document.createElement('div'); cardWrap.className = 'cards'; t.appendChild(cardWrap); }
+            cardWrap.insertAdjacentHTML('beforeend', summaryCard(payload));
+            streamedCards++;
+            scroll();
+          } else if (ev === 'delta') {
+            // Model prose, token by token.
+            if (!answerEl) {
+              statusEl.remove();
+              answerEl = bubble(t, 'bot', '');
+              answerEl.classList.add('streaming', 'rich');
+            }
+            answerRaw += payload;
+            // The bullets, bold and code resolve as they arrive rather than
+            // all at once at the end. formatBlocks leaves only the line still
+            // being typed escaped, so a half-written '**' cannot flicker --
+            // and because the finished message uses the same renderer, there
+            // is nothing left to rebuild when the stream stops.
+            answerEl.innerHTML = formatBlocks(answerRaw, true);
+            scroll();
+          } else if (ev === 'result') {
+            const shownRows = (payload.threads && payload.threads.length) ? payload.threads
+              : ((payload.summaries && payload.summaries.length) ? payload.summaries : null);
+            if (shownRows) turnRecord.rows = shownRows.map(compactRow);
+            if (answerEl) {
+              answerEl.classList.remove('streaming');
+              // Only the last line's marks change here; every line above it is
+              // already in its final form.
+              answerEl.innerHTML = sourceBadge(payload.source)
+                + formatBlocks(payload.text || answerRaw, false)
+                + promptCta('followup', 'Prompt used');
+              turnRecord.reply = (payload.text || '').slice(0, 600);
+            } else {
+              statusEl.textContent = lines.slice(-2).join('\n');
+              if (!statusEl.textContent) statusEl.remove();
+              const b = bubble(t, 'bot', '');
+              b.classList.add('rich');
+              b.innerHTML = sourceBadge(payload.source)
+                + formatBlocks(payload.text || '(no response)', false)
+                + promptCta('followup', 'Prompt used');
+              turnRecord.reply = (payload.text || '').slice(0, 600);
+              if (cardWrap) t.appendChild(cardWrap);  // keep cards below the summary line
+              const threads = (payload.threads && payload.threads.length) ? payload.threads : null;
+              if (threads) {
+                const wrap = document.createElement('div');
+                wrap.innerHTML = (payload.groups && payload.groups.length)
+                  ? groupedList(payload.groups, threads) : threadList(threads);
+                b.after(wrap);
+              } else if (!streamedCards && payload.summaries && payload.summaries.length) {
+                // No cards were streamed (cached-only path); render them now.
+                const wrap = document.createElement('div'); wrap.className = 'cards';
+                wrap.innerHTML = payload.summaries.map(summaryCard).join('');
+                b.after(wrap);
+              }
+            }
+            scroll();
+          }
+        }
+      }
+      if (needsToken) {
+        // Nothing to record: the turn never ran. Retried verbatim once a token
+        // is in, so the person does not have to retype the question.
+        inFlight = null; busy = false; setSendMode('send');
+        askForToken(needsToken.detail, () => ask(needsToken.retry || message));
+        return;
+      }
+      if (stopped) {
+        statusEl.remove();
+        if (answerEl) {
+          answerEl.classList.remove('streaming');
+          answerEl.classList.add('stopped');
+          answerEl.insertAdjacentHTML('beforeend',
+            '<div class="stopnote">Stopped — this answer is incomplete.</div>');
+        } else {
+          bubble(t, 'bot', 'Stopped.').classList.add('stopped');
+        }
+        // An interrupted turn is not context: a follow-up must not inherit half
+        // an answer, or a window that was never actually read.
+        turnRecord.reply = '(stopped by the user)';
+        turnRecord.rows = [];
+      }
+      if (!turnRecord.reply) turnRecord.reply = '(no reply)';
+      history.push(turnRecord);
+      if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
+      renderHistoryState();
+      inFlight = null; busy = false; setSendMode('send'); input.focus(); refreshStats();
+      // Instantly from the turn, then from the model when it comes back.
+      const quick = localSuggestions();
+      if (quick) {
+        const chat = activeChat();
+        if (chat) chat.suggestions = quick;
+        renderChips(quick);
+      }
+      refreshSuggestions();
+      if (pending) {
+        const next = pending;
+        pending = null;
+        ask(next);
+      }
+    }
+
+    // --- which model answers ---------------------------------------------
+    // Per session, chosen here rather than by editing config.yaml. Only the
+    // options that would actually work are offered: the list comes from the
+    // server probing for `claude`, for an API key, and for whatever the local
+    // server has pulled.
+    const ENGINE_KEY = 'oncallbot.engine';
+    const engineSel = document.getElementById('engine');
+    let engines = [];
+
+    function engineValue(e) {
+      return e.id + '|' + (e.model || '');
+    }
+
+    function renderEngines(list, current) {
+      engines = list || [];
+      engineSel.innerHTML = '';
+      if (!engines.length) { engineSel.hidden = true; return; }
+      engineSel.hidden = false;
+
+      const wanted = (() => {
+        try { return localStorage.getItem(ENGINE_KEY) || ''; } catch { return ''; }
+      })();
+      const currentValue = current ? current.backend + '|' + (current.model || '') : '';
+
+      engines.forEach(e => {
+        const o = document.createElement('option');
+        o.value = engineValue(e);
+        o.textContent = e.label + (e.available ? '' : ' — unavailable');
+        o.disabled = !e.available;
+        o.title = e.why || e.note || '';
+        engineSel.appendChild(o);
+      });
+
+      // The remembered choice, else whatever the server is actually using.
+      const pick = engines.find(e => engineValue(e) === wanted && e.available)
+        || engines.find(e => engineValue(e) === currentValue)
+        || engines.find(e => e.available);
+      if (pick) { engineSel.value = engineValue(pick); markEngine(pick); }
+      // If the remembered one is gone -- a model deleted, a key unset -- tell
+      // the server what we actually fell back to rather than leaving them
+      // disagreeing.
+      if (pick && engineValue(pick) !== currentValue) applyEngine(pick, true);
+    }
+
+    function markEngine(engine) {
+      const dot = document.getElementById('enginedot');
+      dot.className = 'enginedot ' + (engine.id === 'local' ? 'local' : 'cloud');
+      dot.title = engine.note || engine.label;
+      fitEngineWidth();
+    }
+
+    // A select sizes itself to its LONGEST option, so the pill stayed as wide
+    // as "Anthropic API (...) - unavailable" and a short label left ~48px of
+    // dead space before the chevron. Nothing else on the row moves when this
+    // changes: the picker is left-aligned and the actions are right-aligned.
+    function fitEngineWidth() {
+      const s = document.getElementById('engine');
+      const opt = s.options[s.selectedIndex];
+      if (!opt) return;
+      const cs = getComputedStyle(s);
+      const probe = document.createElement('span');
+      probe.style.cssText =
+        'position:absolute;visibility:hidden;white-space:pre;font:' + cs.font;
+      probe.textContent = opt.textContent;
+      document.body.appendChild(probe);
+      const textW = probe.getBoundingClientRect().width;
+      probe.remove();
+      // text + the space reserved for the dot and the chevron + borders.
+      const w = Math.ceil(textW) + 25 + 28 + 2;
+      s.style.width = Math.min(w, 210) + 'px';
+    }
+
+    async function applyEngine(engine, quiet) {
+      try {
+        const r = await api('/api/session', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ backend: engine.id, model: engine.model || '' })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        try { localStorage.setItem(ENGINE_KEY, engineValue(engine)); } catch { }
+        if (!quiet) {
+          toast('Answers now come from ' + engine.label
+            + (engine.note ? ' — ' + engine.note : ''));
+        }
+      } catch (e) {
+        if (!quiet) toast('Could not switch model: ' + e.message);
+      }
+    }
+
+    engineSel.onchange = () => {
+      const engine = engines.find(e => engineValue(e) === engineSel.value);
+      if (engine) { markEngine(engine); applyEngine(engine); }
+    };
+
+    function renderChips(list) {
+      const box = document.getElementById('chips');
+      box.innerHTML = '';
+      (list && list.length ? list : SUGGESTIONS).forEach(text => {
+        const b = document.createElement('button');
+        b.className = 'chip';
+        // textContent, not innerHTML: these come from a model reading
+        // untrusted email, and a chip is not a place for markup.
+        b.textContent = text;
+        b.onclick = () => askOrQueue(text);
+        box.appendChild(b);
+      });
+      markChipOverflow();
+    }
+
+    // Fade the right edge while there is anything past it, and drop the fade
+    // once the row is scrolled to the end -- otherwise the last chip stays
+    // half-faded when it is in fact the last one.
+    function markChipOverflow() {
+      const box = document.getElementById('chips');
+      const room = box.scrollWidth - box.clientWidth;
+      box.classList.toggle('more', room > 4 && box.scrollLeft < room - 4);
+    }
+
+    document.getElementById('chips').addEventListener('scroll', markChipOverflow);
+    window.addEventListener('resize', markChipOverflow);
+
+    // What the last turn makes obvious, without asking anyone. The model call
+    // below is better, but it takes 20-40s on the CLI backend, and chips that
+    // arrive after the user has moved on are no use -- so these land with the
+    // answer and are replaced when the model answers.
+    function localSuggestions() {
+      const last = history[history.length - 1];
+      if (!last) return null;
+      const rows = last.rows || [];
+      const order = (rows.find(r => (r.order_ids || []).length) || {}).order_ids;
+      const po = order && order[0];
+      const out = [];
+
+      if (last.action === 'fetch' && rows.length) {
+        out.push('Divide these into categories', 'How many of those are closed',
+          'Show me the P0s and P1s');
+        if (po) out.push('Diagnose ' + po);
+      } else if (last.action === 'summarize' || last.action === 'categorize') {
+        out.push('How many of those are closed', 'Show me the P0s and P1s',
+          'What is the most common issue');
+      } else if (last.action === 'order_lookup') {
+        if (po) out.push('What bookings are on ' + po,
+          'Was the patient record edited for ' + po,
+          'Give me the report link for ' + po);
+      } else if (last.action === 'context') {
+        out.push('Summarize the open ones', 'Show me the P0s and P1s');
+      }
+      return out.length ? out.slice(0, 5) : null;
+    }
+
+    // After a turn, ask what is worth doing next. Deliberately after: it is a
+    // hint, and it must not delay the answer. A failure or an empty answer
+    // leaves the chips exactly as they were.
+    async function refreshSuggestions() {
+      const chat = activeChat();
+      if (!history.length) return;
+      try {
+        const r = await api('/api/suggest', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'next', history: history.slice(-MAX_HISTORY) })
+        });
+        if (!r.ok) return;
+        const { suggestions } = await r.json();
+        if (!suggestions || !suggestions.length) return;
+        // Only if the user is still in the chat these were derived from.
+        if (activeChat() !== chat) return;
+        if (chat) chat.suggestions = suggestions;
+        renderChips(suggestions);
+      } catch { /* the chips it has are fine */ }
+    }
+
+    async function refreshStats() {
+      try {
+        const c = await (await api('/api/context')).json();
+        document.getElementById('addr').textContent = c.support_address + (c.mailbox ? ' via ' + c.mailbox : '');
+        HAS_HELP_VIDEO = !!c.help_video;
+        renderEngines(c.engines, c.engine);
+        const out = document.getElementById('signout');
+        if (c.user && c.auth_enabled) {
+          out.hidden = false;
+          out.textContent = 'Sign out';
+          out.title = 'Signed in as ' + c.user;
+        }
+        document.getElementById('foot').textContent = (c.auth_enabled
+          ? `Signed in as ${c.user}. Reads happen as you.`
+          : 'Localhost only, no authentication.')
+          + ' Summaries derive from patient data — see docs/deploy.md before exposing this.';
+        const sev = c.by_severity || {};
+        const order = ['p0', 'p1', 'p2', 'p3'];
+        document.getElementById('stats').innerHTML =
+          `<span>${c.cached} cached</span>` +
+          order.filter(k => sev[k]).map(k => `<span class="pill ${k}">${k.toUpperCase()} ${sev[k]}</span>`).join('');
+        return c;
+      } catch { return null; }
+    }
+
+    (async function init() {
+      const c = await refreshStats();
+      greetingText = c
+        ? `Hi 👋, I'm Triage an oncall bot for the ${c.support_address === "health-record-support@1mg.com" ? "Health Record Support" : c.support_address}. Ask me about oncall raised on mail or any order related info — try one of the suggestions below.`
+        : 'Could not load context. Is config.yaml present?';
+      document.getElementById('greeting').textContent = greetingText;
+      renderChips(SUGGESTIONS);
+      syncSend();
+      // The session starts with one chat rather than none, so switching back
+      // to the first conversation works like switching to any other.
+      newChat(true);
+      renderHistoryState();
+      input.focus();
+    })();
+
+    function renderHistoryState() {
+      if (typeof renderChatList === 'function' && !document.getElementById('chatpanel').hidden) {
+        renderChatList();
+      }
+      const b = document.getElementById('newchat');
+      b.disabled = busy;
+      b.textContent = history.length ? `New chat (${history.length} turn${history.length > 1 ? 's' : ''})` : 'New chat';
+    }
+
+    // Several chats in one session. Each keeps its own transcript and its own
+    // conversation memory, so switching back to one and carrying on works --
+    // a follow-up like "how many of those are closed" resolves against the
+    // rows that chat displayed, not whatever the other one was doing.
+    //
+    // Held in memory only. The transcripts contain patient-derived summaries,
+    // and putting those in localStorage would be new PHI at rest for a
+    // convenience nobody asked for; a reload starts fresh.
+    let chats = [];
+    let activeId = null;
+    let chatSeq = 0;
+
+    // --- the greeting types itself -------------------------------------
+    //
+    // Only ever the greeting: a real answer already streams from the model at
+    // whatever rate the model produces, and pacing that artificially would be
+    // pretending to think.
+    let typing = null;
+
+    function typeInto(el, text) {
+      finishTyping();
+      // Array.from, not text[i]: "Hi 👋" holds a surrogate pair, and slicing
+      // it by index puts half a code point on screen.
+      const chars = Array.from(text);
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (still || chars.length > 400) { el.textContent = text; return; }
+
+      el.textContent = '';
+      el.classList.add('typing');
+      const state = { el, text, i: 0, id: 0 };
+      typing = state;
+      state.id = setInterval(() => {
+        // Two at a time: one per tick reads as slow at this length, and the
+        // eye cannot separate them anyway.
+        state.el.textContent += chars.slice(state.i, state.i + 2).join('');
+        state.i += 2;
+        if (state.i >= chars.length) finishTyping();
+        else scroll();
+      }, 16);
+    }
+
+    // Put the whole text up and stop. Called whenever the greeting stops
+    // being the thing the user is waiting on -- they typed, they asked, or
+    // the chat is being stashed (a half-typed greeting must not be what gets
+    // stored and restored).
+    function finishTyping() {
+      if (!typing) return;
+      const state = typing;
+      typing = null;
+      clearInterval(state.id);
+      state.el.textContent = state.text;
+      state.el.classList.remove('typing');
+    }
+
+    // --- what the turn did, as it did it ---------------------------------
+    //
+    // A trace, not the model's private reasoning: we stream content deltas and
+    // nothing else, and the local models emit no reasoning channel at all.
+    // What it honestly holds is the prompt each call used, the reads that went
+    // out with their parameters, and the steps around them -- which is what
+    // you need to see why an answer came out the way it did.
+    function traceRow(e) {
+      if (e.kind === 'prompt') {
+        return `<div class="trow">
+          <span class="tkind tprompt">prompt</span>
+          <span class="tlabel">${esc(e.label || e.key || '')}</span>
+          ${e.edited ? '<span class="tedited">edited</span>' : ''}
+          <span class="tmeta">${e.chars || 0} chars</span>
+          ${e.text ? `<details class="tdetail"><summary>show</summary><pre>${esc(e.text)}</pre></details>` : ''}
+        </div>`;
+      }
+      if (e.kind === 'tool') {
+        const params = e.params ? Object.entries(e.params)
+          .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join('  ') : '';
+        return `<div class="trow">
+          <span class="tkind ttool">${esc(e.method || 'read')}</span>
+          <span class="tlabel">${esc(e.label || '')}</span>
+          ${params ? `<code class="tparams">${esc(params)}</code>` : ''}
+        </div>`;
+      }
+      return `<div class="trow">
+        <span class="tkind">step</span>
+        <span class="tlabel">${esc(e.label || '')}</span></div>`;
+    }
+
+    // Rendered INSIDE the panel it explains, under its header, so the steps sit
+    // with the summary or diagnosis they produced rather than floating above
+    // the card. The panel is rebuilt on every paint, so this has to be part of
+    // its markup -- a node injected beside it would be wiped by the next
+    // delta. `traceOpen` rides on the live object for the same reason: the
+    // <details> element itself does not survive a repaint.
+    // The finished panel, still carrying what it took to get there. Passing
+    // null here used to be how "not streaming any more" was said, and that
+    // would now throw the trace away at the moment it is most worth reading.
+    function done(live) {
+      return { streaming: false, trace: live.trace, traceOpen: live.traceOpen };
+    }
+
+    function traceBlock(live) {
+      const rows = (live && live.trace) || [];
+      if (!rows.length) return '';
+      const n = rows.length;
+      return `<details class="thinking"${live.traceOpen ? ' open' : ''}>
+        <summary><span class="tsum">Thinking</span>
+          <span class="tcount">${n} ${n === 1 ? 'step' : 'steps'}</span></summary>
+        <div class="tbody">${rows.map(traceRow).join('')}</div>
+      </details>`;
+    }
+
+    // One accordion per turn, built on the first entry and appended to after.
+    function traceInto(turnEl, entry) {
+      let box = turnEl.querySelector('.thinking');
+      if (!box) {
+        box = document.createElement('details');
+        box.className = 'thinking';
+        box.innerHTML = '<summary><span class="tsum">Thinking</span>'
+          + '<span class="tcount"></span></summary><div class="tbody"></div>';
+        // Above the answer: it is what led to it.
+        turnEl.insertBefore(box, turnEl.firstChild);
+      }
+      box.querySelector('.tbody').insertAdjacentHTML('beforeend', traceRow(entry));
+      const n = box.querySelectorAll('.trow').length;
+      box.querySelector('.tcount').textContent =
+        n + (n === 1 ? ' step' : ' steps');
+      return box;
+    }
+
+    function greetingBubble() {
+      const t = turn();
+      const d = document.createElement('div');
+      d.className = 'msg bot';
+      t.appendChild(d);
+      typeInto(d, greetingText || 'New chat. Ask me about the inbox or an order.');
+    }
+
+    function activeChat() {
+      return chats.find(c => c.id === activeId) || null;
+    }
+
+    function stash() {
+      finishTyping();
+      const chat = activeChat();
+      if (!chat) return;
+      chat.html = log.innerHTML;
+      chat.history = history;
+      chat.draft = input.value;
+    }
+
+    function chatTitle(chat) {
+      const first = (chat.history.find(h => h.message) || {}).message || '';
+      if (!first) return 'Empty chat';
+      return first.length > 38 ? first.slice(0, 35) + '…' : first;
+    }
+
+    function newChat(quiet) {
+      // A turn in flight belongs to the chat being left, and its appends would
+      // land in the new one.
+      stopInFlight();
+      stash();
+      const chat = {
+        id: ++chatSeq, history: [], html: '', draft: '',
+        suggestions: null, at: Date.now()
+      };
+      chats.push(chat);
+      activeId = chat.id;
+      history = [];
+      log.innerHTML = '';
+      greetingBubble();
+      renderChips(SUGGESTIONS);
+      input.value = ''; input.style.height = 'auto'; input.focus();
+      renderHistoryState();
+      renderChatList();
+      if (!quiet) toast('Started a new chat');
+    }
+
+    function switchChat(id) {
+      if (id === activeId) { closeChatPanel(); return; }
+      const chat = chats.find(c => c.id === id);
+      if (!chat) return;
+      stopInFlight();
+      stash();
+      activeId = id;
+      history = chat.history;
+      log.innerHTML = chat.html;
+      renderChips(chat.suggestions);
+      input.value = chat.draft || '';
+      input.style.height = 'auto';
+      renderHistoryState();
+      renderChatList();
+      closeChatPanel();
+      scroll();
+      input.focus();
+      toast('Switched to: ' + chatTitle(chat));
+    }
+
+    function renderChatList() {
+      const box = document.getElementById('chatitems');
+      box.innerHTML = chats.map(c => {
+        const turns = c.id === activeId ? history.length : c.history.length;
+        return `<button class="chatitem${c.id === activeId ? ' active' : ''}" data-chat="${c.id}">
+          <span class="t">${esc(c.id === activeId ? chatTitle({ history }) : chatTitle(c))}</span>
+          <span class="n">${turns} turn${turns === 1 ? '' : 's'}${c.id === activeId ? ' · current' : ''}</span>
+        </button>`;
+      }).join('');
+      const btn = document.getElementById('chatlist');
+      btn.textContent = chats.length > 1 ? `Chats (${chats.length})` : 'Chats';
+    }
+
+    function closeChatPanel() {
+      document.getElementById('chatpanel').hidden = true;
+    }
+
+    document.getElementById('newchat').onclick = () => newChat();
+    document.getElementById('chatnew').onclick = () => { newChat(); closeChatPanel(); };
+    document.getElementById('chatlist').onclick = (e) => {
+      e.stopPropagation();
+      const panel = document.getElementById('chatpanel');
+      renderChatList();
+      panel.hidden = !panel.hidden;
+    };
+    document.getElementById('chatitems').onclick = (e) => {
+      const item = e.target.closest('[data-chat]');
+      if (item) switchChat(Number(item.dataset.chat));
+    };
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('chatpanel');
+      if (panel.hidden) return;
+      if (!panel.contains(e.target) && e.target.id !== 'chatlist') closeChatPanel();
+    });
+
+    // Asking something new mid-answer is the common case, so Enter stops the
+    // current turn and sends the new question rather than being ignored.
+    let pending = null;
+
+    function askOrQueue(message) {
+      if (!message.trim()) return;
+      if (!busy) { ask(message); return; }
+      pending = message;
+      input.value = ''; input.style.height = 'auto';
+      stopInFlight();
+    }
+
+    function syncSend() {
+      // Never disabled while a turn runs: it is the Stop button then.
+      send.disabled = !busy && !input.value.trim();
+    }
+
+    function setSendMode(mode) {
+      // Runs at both ends of a turn, which is exactly when the button's
+      // reason to exist changes.
+      setTimeout(syncJump, 0);
+      send.textContent = mode === 'stop' ? 'Stop' : 'Send';
+      send.classList.toggle('stop', mode === 'stop');
+      send.title = mode === 'stop' ? 'Stop this answer (Esc)' : '';
+      syncSend();
+    }
+
+    send.onclick = () => {
+      if (busy) { stopInFlight(); return; }
+      ask(input.value);
+    };
+
+    // Esc stops whatever is streaming, from anywhere on the page.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !backdrop.hidden) return;   // the modal owns Esc
+      if (stopDictation()) return;
+      if (stopInFlight()) return;
+      const running = document.querySelector('[data-running="1"]');
+      if (running && running._stop) running._stop();
+    });
+    document.getElementById('signout').addEventListener('click', async () => {
+      try {
+        await fetch('/auth/logout', { method: 'POST' });
+      } catch { }
+      location.replace('/login?err=logged_out');
+    });
+
+    // --- dictation -----------------------------------------------------------
+    // The browser's own recognizer, so there is nothing to install and no
+    // audio endpoint of ours. Note where the audio goes: Chrome sends it to
+    // Google's speech service, Safari to Apple's. An order id spoken aloud
+    // leaves the machine the same way a typed one does not -- see docs/phi.md.
+    // Where that is not acceptable, the alternative is a local Whisper behind
+    // an endpoint of our own; this button is deliberately easy to swap.
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const mic = document.getElementById('mic');
+    let recognizer = null;
+    let dictating = false;
+    let dictationBase = '';
+    let dictationFinal = '';
+
+    function micState(on) {
+      dictating = on;
+      mic.classList.toggle('live', on);
+      mic.setAttribute('aria-pressed', String(on));
+      mic.title = on ? 'Stop dictating' : 'Dictate your question';
+    }
+
+    function stopDictation() {
+      if (!recognizer || !dictating) return false;
+      // onend does the tidying, so the two paths cannot disagree.
+      try { recognizer.stop(); } catch { micState(false); }
+      return true;
+    }
+
+    function startDictation() {
+      if (!SpeechRec) return;
+      recognizer = new SpeechRec();
+      // Indian English: the mailbox, the names and the order ids are all local.
+      recognizer.lang = document.documentElement.lang === 'en' ? 'en-IN' : (document.documentElement.lang || 'en-IN');
+      recognizer.continuous = true;      // a long question is not cut short
+      recognizer.interimResults = true;  // the words appear as they are said
+
+      // Appended to whatever is typed, never replacing it: dictation is for
+      // adding to a question, including one half-written.
+      dictationBase = input.value ? input.value.replace(/\s*$/, '') + ' ' : '';
+      dictationFinal = '';
+
+      recognizer.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const chunk = event.results[i][0].transcript;
+          if (event.results[i].isFinal) dictationFinal += chunk;
+          else interim += chunk;
+        }
+        input.value = (dictationBase + dictationFinal + interim).replace(/\s+/g, ' ').trimStart();
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+      };
+
+      recognizer.onerror = (event) => {
+        micState(false);
+        const why = {
+          'not-allowed': 'Microphone access was refused. Allow it in the browser, then try again.',
+          'service-not-allowed': 'The browser blocked speech recognition for this page.',
+          'no-speech': 'Did not hear anything.',
+          'audio-capture': 'No microphone found.',
+          'network': 'Speech recognition needs a network connection.',
+        }[event.error] || ('Dictation failed: ' + event.error);
+        toast(why);
+      };
+
+      recognizer.onend = () => {
+        micState(false);
+        input.focus();
+      };
+
+      try {
+        recognizer.start();
+        micState(true);
+        toast('Listening — click the mic again to stop');
+      } catch {
+        micState(false);
+        toast('Could not start dictation');
+      }
+    }
+
+    if (SpeechRec) {
+      // Shown only where it works. A dead button is worse than no button, and
+      // Firefox has no implementation at all.
+      mic.hidden = false;
+      mic.onclick = () => { if (!stopDictation()) startDictation(); };
+    }
+
+
+    document.getElementById('jump').onclick = () => { scroll(true); input.focus(); };
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askOrQueue(input.value); }
+    });
+    input.addEventListener('input', () => {
+      // They are already typing their own question; stop performing.
+      finishTyping();
+      syncSend();
+      input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+    });
+
+    /* --- theme ---
+       Three states, not two: "follow the OS" is a real preference and not the
+       same as choosing light, so cycling goes system -> light -> dark -> system.
+       Only an explicit pick is stored; landing back on system clears the key. */
+    (function () {
+      const KEY = 'oncallbot.theme';
+      const ORDER = ['system', 'light', 'dark'];
+      const ICON = { system: '◐', light: '☀', dark: '☾' };
+      const btn = document.getElementById('theme');
+      const icon = document.getElementById('themeicon');
+      const mq = matchMedia('(prefers-color-scheme: dark)');
+
+      function read() {
+        try {
+          const v = localStorage.getItem(KEY);
+          return ORDER.includes(v) ? v : 'system';
+        } catch { return 'system'; }
+      }
+
+      function apply(mode) {
+        if (mode === 'system') delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = mode;
+        icon.textContent = ICON[mode];
+        const label = mode === 'system'
+          ? 'Theme: system (' + (mq.matches ? 'dark' : 'light') + ')'
+          : 'Theme: ' + mode;
+        const next = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length];
+        btn.title = label + ' \u2014 switch to ' + next;
+        btn.setAttribute('aria-label', btn.title);
+      }
+
+      btn.addEventListener('click', () => {
+        const next = ORDER[(ORDER.indexOf(read()) + 1) % ORDER.length];
+        try {
+          if (next === 'system') localStorage.removeItem(KEY);
+          else localStorage.setItem(KEY, next);
+        } catch { }
+        apply(next);
+      });
+
+      // In system mode the CSS already follows along; this only keeps the
+      // button's label honest about which way the OS resolved.
+      mq.addEventListener('change', () => { if (read() === 'system') apply('system'); });
+
+      apply(read());
+    })();
+  </script>
+</body>
+
+</html>
